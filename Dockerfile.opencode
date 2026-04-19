@@ -7,14 +7,18 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git \
         curl \
-        unzip \
+        tar \
         ca-certificates \
         openssh-client \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install opencode via the official installer. Pins the binary to /usr/local/bin.
+# Install opencode via the official installer. The script hardcodes the
+# install path to $HOME/.opencode/bin — relocate the binary to /usr/local/bin
+# so it's on PATH for any user (the container runs as `forgewright`).
 RUN set -eux; \
-    curl -fsSL https://opencode.ai/install | env OPENCODE_INSTALL_DIR=/usr/local bash; \
+    curl -fsSL https://opencode.ai/install | bash; \
+    install -m 0755 /root/.opencode/bin/opencode /usr/local/bin/opencode; \
+    rm -rf /root/.opencode; \
     opencode --version
 
 RUN set -eux; \
@@ -50,3 +54,4 @@ EXPOSE 5000
 
 ENTRYPOINT ["forgewright-entrypoint"]
 CMD ["poll"]
+
