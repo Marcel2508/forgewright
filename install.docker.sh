@@ -4,6 +4,9 @@
 # containers with `restart: unless-stopped`. Polling is driven by
 # supercronic inside the poller container.
 #
+# Uses the prebuilt images published to GHCR
+# (ghcr.io/marcel2508/forgewright-{claude,opencode}:latest).
+#
 # Usage:
 #   bash install.docker.sh [--profile claude|opencode] [--dir /opt/forgewright]
 #
@@ -52,18 +55,9 @@ fi
 echo "==> installing to $INSTALL_DIR (profile: $PROFILE)"
 $SUDO install -d -m 0755 "$INSTALL_DIR"
 
-for f in Dockerfile.claude Dockerfile.opencode docker-compose.yml \
-         requirements.txt pyproject.toml forgewright.py; do
-  $SUDO install -m 0644 "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
-done
-
-$SUDO rm -rf "$INSTALL_DIR/forgewright"
-$SUDO cp -r "$SCRIPT_DIR/forgewright" "$INSTALL_DIR/forgewright"
-
-# Copy docker/ helpers but preserve any existing claude-state runtime dir so
-# we don't wipe a user's Claude session on reinstall.
-$SUDO install -d -m 0755 "$INSTALL_DIR/docker"
-$SUDO install -m 0755 "$SCRIPT_DIR/docker/entrypoint.sh" "$INSTALL_DIR/docker/entrypoint.sh"
+# Only docker-compose.yml is needed on the host — everything else
+# (source, entrypoint) is baked into the prebuilt image.
+$SUDO install -m 0644 "$SCRIPT_DIR/docker-compose.yml" "$INSTALL_DIR/docker-compose.yml"
 
 # Seed the fallback Claude state dir used when CLAUDE_HOME is unset.
 $SUDO install -d -m 0755 "$INSTALL_DIR/docker/claude-state/.claude"
@@ -87,10 +81,10 @@ else
   echo "   -> $INSTALL_DIR/.env already exists, leaving untouched"
 fi
 
-# --- Build and start ---------------------------------------------------------
+# --- Pull and start ----------------------------------------------------------
 
-echo "==> building images"
-(cd "$INSTALL_DIR" && $SUDO docker compose --profile "$PROFILE" build)
+echo "==> pulling prebuilt images"
+(cd "$INSTALL_DIR" && $SUDO docker compose --profile "$PROFILE" pull)
 
 echo "==> starting services"
 (cd "$INSTALL_DIR" && $SUDO docker compose --profile "$PROFILE" up -d)

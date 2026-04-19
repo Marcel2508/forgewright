@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Update an existing Docker-based forgewright installation.
-# Re-copies source files, rebuilds the image, and restarts the services.
-# Config and persistent state (named volumes) are NOT touched.
+# Refreshes docker-compose.yml, pulls the latest prebuilt image from GHCR,
+# and recreates the services. Config and persistent state (named volumes)
+# are NOT touched.
 #
 # Usage:
 #   bash update.docker.sh [--profile claude|opencode] [--dir /opt/forgewright]
@@ -32,25 +33,17 @@ if [ ! -w "$INSTALL_DIR" ] && [ "$(id -u)" -ne 0 ]; then
   SUDO="sudo"
 fi
 
-echo "==> updating source files in $INSTALL_DIR"
-for f in Dockerfile.claude Dockerfile.opencode docker-compose.yml \
-         requirements.txt pyproject.toml forgewright.py; do
-  $SUDO install -m 0644 "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
-done
+echo "==> refreshing docker-compose.yml in $INSTALL_DIR"
+$SUDO install -m 0644 "$SCRIPT_DIR/docker-compose.yml" "$INSTALL_DIR/docker-compose.yml"
 
-$SUDO rm -rf "$INSTALL_DIR/forgewright"
-$SUDO cp -r "$SCRIPT_DIR/forgewright" "$INSTALL_DIR/forgewright"
-
-# Refresh docker/ helpers but preserve any runtime state under claude-state/.
-$SUDO install -d -m 0755 "$INSTALL_DIR/docker"
-$SUDO install -m 0755 "$SCRIPT_DIR/docker/entrypoint.sh" "$INSTALL_DIR/docker/entrypoint.sh"
+# Preserve runtime state under claude-state/; seed only if missing.
 $SUDO install -d -m 0755 "$INSTALL_DIR/docker/claude-state/.claude"
 if [ ! -f "$INSTALL_DIR/docker/claude-state/.claude.json" ]; then
   $SUDO sh -c "printf '{}\n' > '$INSTALL_DIR/docker/claude-state/.claude.json'"
 fi
 
-echo "==> rebuilding images (profile: $PROFILE)"
-(cd "$INSTALL_DIR" && $SUDO docker compose --profile "$PROFILE" build --pull)
+echo "==> pulling latest images (profile: $PROFILE)"
+(cd "$INSTALL_DIR" && $SUDO docker compose --profile "$PROFILE" pull)
 
 echo "==> recreating containers"
 (cd "$INSTALL_DIR" && $SUDO docker compose --profile "$PROFILE" up -d --force-recreate)

@@ -11,10 +11,8 @@
 # Secrets and host paths come from .env (see .env.example).
 
 x-claude-common: &claude-common
-  build:
-    context: .
-    dockerfile: Dockerfile.claude
-  image: forgewright-claude:latest
+  image: ghcr.io/marcel2508/forgewright-claude:latest
+  pull_policy: always
   environment: &claude-env
     FORGEWRIGHT_CONFIG: /etc/forgewright/config.yaml
     PLATFORM_TOKEN: ${PLATFORM_TOKEN:-}
@@ -33,10 +31,8 @@ x-claude-common: &claude-common
     - ${CLAUDE_HOME:-./docker/claude-state}/.claude:/home/forgewright/.claude
 
 x-opencode-common: &opencode-common
-  build:
-    context: .
-    dockerfile: Dockerfile.opencode
-  image: forgewright-opencode:latest
+  image: ghcr.io/marcel2508/forgewright-opencode:latest
+  pull_policy: always
   environment: &opencode-env
     FORGEWRIGHT_CONFIG: /etc/forgewright/config.yaml
     PLATFORM_TOKEN: ${PLATFORM_TOKEN:-}

@@ -124,7 +124,7 @@ the same git-worktree pipeline:
 Native install (systemd + venv):
 
 ```bash
-git clone <this-repo> forgewright
+git clone https://github.com/Marcel2508/forgewright.git
 cd forgewright
 sudo bash install.sh
 sudo systemctl edit forgewright.service
@@ -139,8 +139,10 @@ bash install.docker.sh --profile claude     # or --profile opencode
 # then edit /opt/forgewright/config.yaml and /opt/forgewright/.env
 ```
 
-The installer brings up two long-running containers per profile — a webhook
-receiver and a poller with supercronic inside it.
+The installer pulls the prebuilt image from GHCR
+(`ghcr.io/marcel2508/forgewright-{claude,opencode}:latest`) and brings up
+two long-running containers per profile — a webhook receiver and a poller
+with supercronic inside it.
 
 Full setup — picking platform, picking agent, configuring tokens, enabling
 the webhook server — is covered in

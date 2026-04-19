@@ -22,7 +22,7 @@ There are three things to decide before installing:
 ## Native install (systemd)
 
 ```bash
-git clone https://github.com/yourname/forgewright.git
+git clone https://github.com/Marcel2508/forgewright.git
 cd forgewright
 sudo bash install.sh
 ```
@@ -69,14 +69,14 @@ After running the installer:
 ## Docker install
 
 ```bash
-git clone https://github.com/yourname/forgewright.git
+git clone https://github.com/Marcel2508/forgewright.git
 cd forgewright
 bash install.docker.sh --profile claude      # or --profile opencode
 ```
 
-`install.docker.sh` copies the project into `/opt/forgewright`, builds the
-agent-specific image, and brings up two long-running containers via Docker
-Compose:
+`install.docker.sh` copies `docker-compose.yml` into `/opt/forgewright`,
+pulls the prebuilt agent-specific image from GHCR, and brings up two
+long-running containers via Docker Compose:
 
 | Container | Role |
 |---|---|
@@ -89,19 +89,27 @@ involved** — if Docker is up, forgewright is up.
 
 ### Images
 
-Two Dockerfiles ship in the repo, one per agent:
+Two prebuilt images are published to GHCR for `linux/amd64` and
+`linux/arm64`, one per agent:
 
-- **`Dockerfile.claude`** — Debian slim + Node 22 + `@anthropic-ai/claude-code`
-  + supercronic. Used by the `claude` compose profile.
-- **`Dockerfile.opencode`** — Debian slim + opencode (via the official
-  installer) + supercronic. Used by the `opencode` compose profile.
+- **`ghcr.io/marcel2508/forgewright-claude:latest`** — Python 3.12 slim +
+  Node 22 + `@anthropic-ai/claude-code` + supercronic. Used by the `claude`
+  compose profile.
+- **`ghcr.io/marcel2508/forgewright-opencode:latest`** — Python 3.12 slim +
+  opencode (via the official installer) + supercronic. Used by the
+  `opencode` compose profile.
+
+The corresponding `Dockerfile.claude` and `Dockerfile.opencode` in the repo
+are what the [GitHub Actions workflow](https://github.com/Marcel2508/forgewright/blob/main/.github/workflows/docker.yml)
+builds and publishes on every push to `main` and on semver tags.
 
 Pick an agent at install time with `--profile claude` or `--profile opencode`.
-Switching later means rebuilding the other image:
+Switching later just needs a pull of the other image:
 
 ```bash
 cd /opt/forgewright
 docker compose --profile opencode down
+docker compose --profile claude pull
 docker compose --profile claude up -d
 ```
 
@@ -159,8 +167,9 @@ bash update.docker.sh --profile claude        # Docker (or --profile opencode)
 ```
 
 The native updater refreshes the package, dependencies, and systemd units.
-The Docker updater re-copies sources, rebuilds the image, and recreates the
-containers. Neither touches `config.yaml`, `.env`, or any persistent volume.
+The Docker updater refreshes `docker-compose.yml`, pulls the latest prebuilt
+image from GHCR, and recreates the containers. Neither touches
+`config.yaml`, `.env`, or any persistent volume.
 
 ## Agent CLI setup
 
