@@ -1,0 +1,3 @@
+# Alternative to the systemd timer: classic cron line.
+# Edit with: sudo -u forgewright crontab -e
+*/5 * * * * FORGEWRIGHT_CONFIG=/etc/forgewright/config.yaml /opt/forgewright/venv/bin/python /opt/forgewright/forgewright.py >> /var/log/forgewright/cron.log 2>&1

@@ -1,0 +1,52 @@
+FROM python:3.12-slim
+
+ARG TARGETARCH
+ARG SUPERCRONIC_VERSION=0.2.33
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git \
+        curl \
+        unzip \
+        ca-certificates \
+        openssh-client \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install opencode via the official installer. Pins the binary to /usr/local/bin.
+RUN set -eux; \
+    curl -fsSL https://opencode.ai/install | env OPENCODE_INSTALL_DIR=/usr/local bash; \
+    opencode --version
+
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) arch=amd64 ;; \
+      arm64) arch=arm64 ;; \
+      arm)   arch=arm ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/local/bin/supercronic \
+      "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-${arch}"; \
+    chmod +x /usr/local/bin/supercronic
+
+RUN useradd --system --create-home --shell /bin/bash forgewright
+
+COPY pyproject.toml /opt/forgewright/pyproject.toml
+COPY requirements.txt /opt/forgewright/requirements.txt
+COPY forgewright.py /opt/forgewright/forgewright.py
+COPY forgewright/ /opt/forgewright/forgewright/
+
+RUN pip install --no-cache-dir /opt/forgewright
+
+RUN install -d -o forgewright -g forgewright \
+      /var/lib/forgewright /var/log/forgewright \
+      /home/forgewright/.config/opencode
+
+COPY docker/entrypoint.sh /usr/local/bin/forgewright-entrypoint
+RUN chmod +x /usr/local/bin/forgewright-entrypoint
+
+USER forgewright
+WORKDIR /home/forgewright
+EXPOSE 5000
+
+ENTRYPOINT ["forgewright-entrypoint"]
+CMD ["poll"]

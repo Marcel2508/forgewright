@@ -1,0 +1,96 @@
+# forgewright configuration
+# -------------------------
+# Copy to /etc/forgewright/config.yaml and edit.
+
+# Platform URL.  For GitLab: the instance base URL.
+# For GitHub: https://api.github.com (or your GHE URL).
+# The old key "gitlab_url" is still accepted as a fallback.
+platform_url: "https://gitlab.example.com"
+
+# API token for the bot user.
+# GitLab: Personal Access Token (scopes: api, read_repository, write_repository).
+# GitHub: Fine-grained PAT (contents:write, pull_requests:write, issues:write).
+# You can either put it here (chmod 600!) or set via the PLATFORM_TOKEN
+# environment variable (recommended for systemd).  GITLAB_TOKEN is also
+# accepted as a fallback.
+platform_token: ""
+
+# Username of the bot user. Must match the token owner.
+# This value ALSO defines the mention that triggers the bot: the bot reacts
+# to "@<bot_username>" in issue/MR descriptions and comments.
+# Examples:
+#   bot_username: "forgewright"  -> react to "@forgewright ..."
+#   bot_username: "jarvis"       -> react to "@jarvis ..."
+# If the token owner's actual username differs from this value, the bot
+# logs a warning at startup and uses the token owner's username instead.
+bot_username: "forgewright"
+
+# Where the bot keeps its working files.
+workdir:    "/var/lib/forgewright/work"
+state_file: "/var/lib/forgewright/state.json"
+lock_dir:   "/var/lib/forgewright/locks"
+log_file:   "/var/log/forgewright/bot.log"
+
+# Path to the `claude` CLI (run `which claude` on the VM).
+# Only used when agent_type is "claude".
+claude_binary: "/usr/local/bin/claude"
+
+# Optional model override (leave null to use Claude's default).
+# Valid examples: "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"
+claude_model: null
+
+# Branch naming. Every branch the bot creates starts with this prefix.
+branch_prefix: "forgewright/"
+
+# Leave null to use each project's default branch as the base.
+default_base_branch: null
+
+# Git identity used on commits the bot creates directly (rare — usually the agent commits).
+git_user_name:  "Forgewright"
+git_user_email: "forgewright@example.com"
+
+# Project scoping. Leave both empty to watch EVERY project the bot is a member of.
+# Use `path_with_namespace`, e.g. "marcel/myrepo" or "team/subgroup/proj".
+projects_include: []
+projects_exclude: []
+
+# Platform type. Options: "gitlab", "github" (future: "forgejo")
+platform_type: "gitlab"
+
+# AI agent to use. Options: "claude" (Claude Code), "opencode" (OpenCode).
+agent_type: "claude"
+
+# Hard cap per agent run so a broken agent cannot burn through credits.
+claude_timeout_sec: 3600
+
+# OpenCode settings (only used when agent_type is "opencode")
+opencode_binary: "opencode"
+opencode_model: null
+
+# Timeout for individual platform API requests (seconds).
+request_timeout_sec: 30
+
+# Number of retries for failed platform API requests (5xx, timeouts).
+http_retries: 3
+
+# --- Webhook server (optional, for near-real-time event processing) ----------
+# When enabled, run `forgewright --serve` to start a long-running HTTP server
+# that receives platform webhook events. The polling timer acts as a fallback.
+
+# Set to true to allow `--serve` mode.
+webhook_enabled: false
+
+# Bind address and port for the webhook server.
+webhook_host: "127.0.0.1"
+webhook_port: 5000
+
+# Secret token for validating webhook requests. Must match the secret
+# configured on the platform (e.g. GitLab Settings → Webhooks).
+# Leave empty to skip validation (not recommended in production).
+# Can also be set via WEBHOOK_SECRET env var.
+webhook_secret: ""
+
+# Debounce delay (seconds) for webhook events. When multiple events arrive
+# for the same project within this window, only the last one triggers
+# processing. Set to 0 to disable debouncing (immediate processing).
+webhook_debounce_sec: 60

@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forgewright"
+version = "2.0.0"
+description = "Polling and webhook agent that dispatches AI coding agents (Claude Code, OpenCode) to @forgewright mentions on GitLab and GitHub."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Marcel Aust", email = "mail@marcel-aust.de" },
+]
+keywords = ["gitlab", "github", "claude", "opencode", "ai", "bot", "automation", "code-review"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "requests>=2.31",
+    "PyYAML>=6.0",
+    "flask>=3.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://git.marcel-aust.de/privat/forgewright"
+Repository = "https://git.marcel-aust.de/privat/forgewright"
+Issues = "https://git.marcel-aust.de/privat/forgewright/-/issues"
+
+[project.scripts]
+forgewright = "forgewright.main:main"
+
+[tool.setuptools.packages.find]
+include = ["forgewright*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

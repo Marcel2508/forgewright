@@ -1,0 +1,22 @@
+[Unit]
+Description=forgewright — GitLab/GitHub @forgewright dispatcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=forgewright
+Group=forgewright
+
+# Put your PAT here instead of in the yaml for better hygiene.
+# Create it via: systemctl edit forgewright.service  and add
+#   [Service]
+#   Environment=PLATFORM_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx
+Environment=FORGEWRIGHT_CONFIG=/etc/forgewright/config.yaml
+
+# If the agent needs an API key in its own env (when Claude Code is not logged
+# in interactively), drop it here too — or use `claude login` once as the bot
+# user. For OpenCode, set its provider API key similarly.
+# Environment=ANTHROPIC_API_KEY=sk-ant-...
+
+ExecStart=/opt/forgewright/venv/bin/python /opt/forgewright/forgewright.py

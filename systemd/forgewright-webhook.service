@@ -1,0 +1,24 @@
+[Unit]
+Description=forgewright webhook server — GitLab/GitHub event receiver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=forgewright
+Group=forgewright
+Restart=on-failure
+RestartSec=5
+
+Environment=FORGEWRIGHT_CONFIG=/etc/forgewright/config.yaml
+
+# Secrets — create via: systemctl edit forgewright-webhook.service
+# [Service]
+# Environment=PLATFORM_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx
+# Environment=WEBHOOK_SECRET=your-webhook-secret
+# Environment=ANTHROPIC_API_KEY=sk-ant-...
+
+ExecStart=/opt/forgewright/venv/bin/python -m forgewright --serve
+
+[Install]
+WantedBy=multi-user.target

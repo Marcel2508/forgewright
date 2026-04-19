@@ -1,0 +1,94 @@
+# forgewright — Docker Compose deployment
+#
+# Everything runs inside containers: the webhook server (long-running) and
+# the poller (long-running, with an in-container cron via supercronic).
+# No host systemd or cron required.
+#
+# Pick an agent with a profile:
+#   docker compose --profile claude   up -d   # Claude Code
+#   docker compose --profile opencode up -d   # OpenCode
+#
+# Secrets and host paths come from .env (see .env.example).
+
+x-claude-common: &claude-common
+  build:
+    context: .
+    dockerfile: Dockerfile.claude
+  image: forgewright-claude:latest
+  environment: &claude-env
+    FORGEWRIGHT_CONFIG: /etc/forgewright/config.yaml
+    PLATFORM_TOKEN: ${PLATFORM_TOKEN:-}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    POLL_SCHEDULE: ${POLL_SCHEDULE:-*/5 * * * *}
+  volumes: &claude-volumes
+    - ./config.yaml:/etc/forgewright/config.yaml:ro
+    - bot-state:/var/lib/forgewright
+    - bot-logs:/var/log/forgewright
+    # Claude auth: point CLAUDE_HOME at a host directory containing both
+    # `.claude.json` (OAuth session) and `.claude/` (projects/todos/settings) —
+    # typically the home dir of a user who ran `claude login` (Pro/Max).
+    # Unset falls back to ./docker/claude-state/ (seeded empty), in which case
+    # Claude uses ANTHROPIC_API_KEY.
+    - ${CLAUDE_HOME:-./docker/claude-state}/.claude.json:/home/forgewright/.claude.json
+    - ${CLAUDE_HOME:-./docker/claude-state}/.claude:/home/forgewright/.claude
+
+x-opencode-common: &opencode-common
+  build:
+    context: .
+    dockerfile: Dockerfile.opencode
+  image: forgewright-opencode:latest
+  environment: &opencode-env
+    FORGEWRIGHT_CONFIG: /etc/forgewright/config.yaml
+    PLATFORM_TOKEN: ${PLATFORM_TOKEN:-}
+    POLL_SCHEDULE: ${POLL_SCHEDULE:-*/5 * * * *}
+  volumes: &opencode-volumes
+    - ./config.yaml:/etc/forgewright/config.yaml:ro
+    - bot-state:/var/lib/forgewright
+    - bot-logs:/var/log/forgewright
+    # OpenCode config dir: bind-mount the host's ~/.config/opencode for
+    # custom model/provider config, or fall back to a named volume.
+    - ${OPENCODE_CONFIG_HOME:-opencode-config}:/home/forgewright/.config/opencode
+
+services:
+  poller-claude:
+    <<: *claude-common
+    profiles: ["claude"]
+    container_name: forgewright-poller-claude
+    restart: unless-stopped
+    command: ["poll"]
+
+  webhook-claude:
+    <<: *claude-common
+    profiles: ["claude"]
+    container_name: forgewright-webhook-claude
+    restart: unless-stopped
+    command: ["webhook"]
+    environment:
+      <<: *claude-env
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+    ports:
+      - "${WEBHOOK_BIND:-127.0.0.1}:${WEBHOOK_PORT:-5000}:5000"
+
+  poller-opencode:
+    <<: *opencode-common
+    profiles: ["opencode"]
+    container_name: forgewright-poller-opencode
+    restart: unless-stopped
+    command: ["poll"]
+
+  webhook-opencode:
+    <<: *opencode-common
+    profiles: ["opencode"]
+    container_name: forgewright-webhook-opencode
+    restart: unless-stopped
+    command: ["webhook"]
+    environment:
+      <<: *opencode-env
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+    ports:
+      - "${WEBHOOK_BIND:-127.0.0.1}:${WEBHOOK_PORT:-5000}:5000"
+
+volumes:
+  bot-state:
+  bot-logs:
+  opencode-config:
