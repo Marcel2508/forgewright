@@ -93,27 +93,48 @@ else
   echo "   -> $INSTALL_DIR/.env already exists, leaving untouched"
 fi
 
+# --- Decide active compose profile based on webhook_enabled ------------------
+
+# Pull always uses the umbrella profile so both images are local even if the
+# user later flips webhook_enabled. Up uses the umbrella when webhook_enabled
+# is true, otherwise the `-poll` per-component profile (poller only).
+ACTIVE_PROFILE="${PROFILE}-poll"
+if $SUDO grep -Eqi '^[[:space:]]*webhook_enabled[[:space:]]*:[[:space:]]*true[[:space:]]*$' "$INSTALL_DIR/config.yaml"; then
+  ACTIVE_PROFILE="$PROFILE"
+  echo "   -> webhook_enabled: true detected — will start poller + webhook"
+else
+  echo "   -> webhook_enabled: false (or unset) — will start poller only"
+fi
+
 # --- Pull and start ----------------------------------------------------------
 
 echo "==> pulling prebuilt images"
 (cd "$INSTALL_DIR" && $SUDO docker compose --profile "$PROFILE" pull)
 
-echo "==> starting services"
-(cd "$INSTALL_DIR" && $SUDO docker compose --profile "$PROFILE" up -d)
+# If switching to a poller-only setup, stop any webhook container left over
+# from a previous (umbrella) run.
+if [ "$ACTIVE_PROFILE" != "$PROFILE" ]; then
+  (cd "$INSTALL_DIR" && $SUDO docker compose rm -fs "webhook-$PROFILE" 2>/dev/null || true)
+fi
+
+echo "==> starting services (profile: $ACTIVE_PROFILE)"
+(cd "$INSTALL_DIR" && $SUDO docker compose --profile "$ACTIVE_PROFILE" up -d)
 
 cat <<EOF
 
-Done. Services are running under profile "$PROFILE".
+Done. Services are running under profile "$ACTIVE_PROFILE".
 
 Next steps:
   1. Edit config:   $INSTALL_DIR/config.yaml
   2. Edit secrets:  $INSTALL_DIR/.env  (PLATFORM_TOKEN, ANTHROPIC_API_KEY, etc.)
-  3. After editing either file, restart:
-       cd $INSTALL_DIR && docker compose --profile $PROFILE up -d --force-recreate
+  3. After editing either file, recreate:
+       cd $INSTALL_DIR && bash $(basename "$0") --profile $PROFILE
+     (re-running the installer picks up webhook_enabled changes; for unrelated
+     edits a plain \`docker compose --profile $ACTIVE_PROFILE up -d --force-recreate\` is enough)
 
 Useful commands (from $INSTALL_DIR):
-  docker compose --profile $PROFILE ps
-  docker compose --profile $PROFILE logs -f
-  docker compose --profile $PROFILE run --rm poller-$PROFILE --dry-run -v
-  docker compose --profile $PROFILE down
+  docker compose --profile $ACTIVE_PROFILE ps
+  docker compose --profile $ACTIVE_PROFILE logs -f
+  docker compose --profile $ACTIVE_PROFILE run --rm poller-$PROFILE --dry-run -v
+  docker compose --profile $PROFILE down       # umbrella stops everything
 EOF

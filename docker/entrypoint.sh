@@ -10,7 +10,12 @@ case "${1:-poll}" in
     crontab="/home/forgewright/crontab"
     echo "${schedule} python -m forgewright" > "${crontab}"
     echo "forgewright: starting supercronic with schedule: ${schedule}" >&2
-    exec supercronic -passthrough-logs "${crontab}"
+    # Absolute path is required: supercronic detects PID 1 and re-execs
+    # itself via syscall.ForkExec(os.Args[0], …) for the reaper child.
+    # ForkExec is a literal path (no PATH lookup), so an unqualified
+    # `exec supercronic …` leaves os.Args[0]="supercronic" and the re-exec
+    # fails with ENOENT.
+    exec /usr/local/bin/supercronic -passthrough-logs "${crontab}"
     ;;
   webhook)
     echo "forgewright: starting webhook server" >&2

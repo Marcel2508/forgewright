@@ -75,13 +75,18 @@ bash install.docker.sh --profile claude      # or --profile opencode
 ```
 
 `install.docker.sh` copies `docker-compose.yml` into `/opt/forgewright`,
-pulls the prebuilt agent-specific image from GHCR, and brings up two
-long-running containers via Docker Compose:
+pulls the prebuilt agent-specific image from GHCR, and brings up the
+relevant long-running containers via Docker Compose:
 
-| Container | Role |
-|---|---|
-| `forgewright-poller-<profile>` | Runs [supercronic](https://github.com/aptible/supercronic) in-container; fires `python -m forgewright` on `POLL_SCHEDULE` (default `*/5 * * * *`). |
-| `forgewright-webhook-<profile>` | Long-running Flask server receiving GitLab/GitHub events on `127.0.0.1:5000`. |
+| Container | Role | Always started? |
+|---|---|---|
+| `forgewright-poller-<profile>` | Runs [supercronic](https://github.com/aptible/supercronic) in-container; fires `python -m forgewright` on `POLL_SCHEDULE` (default `*/5 * * * *`). | yes |
+| `forgewright-webhook-<profile>` | Long-running Flask server receiving GitLab/GitHub events on `127.0.0.1:5000`. | only when `webhook_enabled: true` |
+
+The installer reads `webhook_enabled` from `config.yaml` and activates the
+right combination: the umbrella `--profile <agent>` (poller + webhook) when
+the webhook is enabled, or `--profile <agent>-poll` (poller only) when it's
+disabled.
 
 Both containers share named volumes for state and logs, and restart on
 failure via `restart: unless-stopped`. **No host systemd, cron, or timer is
@@ -269,8 +274,11 @@ acts as a safety net if webhooks are lost or delayed.
        Pull request review comments, Check runs, Workflow runs.
 3. Start the service:
    - **Native:** `sudo systemctl enable --now forgewright-webhook.service`
-   - **Docker:** the webhook container is started by `install.docker.sh`
-     automatically; nothing else to do.
+   - **Docker:** the webhook container is only started if `webhook_enabled:
+     true` is set in `config.yaml`. After flipping it from `false` to `true`,
+     re-run `bash install.docker.sh --profile <claude|opencode>` to bring up
+     the webhook container alongside the existing poller. (Or, manually:
+     `docker compose --profile <claude|opencode> up -d`.)
 4. Verify:
    ```bash
    curl http://localhost:5000/health

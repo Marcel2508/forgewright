@@ -46,16 +46,20 @@ x-opencode-common: &opencode-common
     - ${OPENCODE_CONFIG_HOME:-opencode-config}:/home/forgewright/.config/opencode
 
 services:
+  # Each service belongs to two profiles: an umbrella (`claude` / `opencode`)
+  # that starts both poller and webhook, and a per-component profile
+  # (`*-poll` / `*-webhook`) that starts just one. Use the umbrella when
+  # `webhook_enabled: true`, the `-poll` profile when it's false.
   poller-claude:
     <<: *claude-common
-    profiles: ["claude"]
+    profiles: ["claude", "claude-poll"]
     container_name: forgewright-poller-claude
     restart: unless-stopped
     command: ["poll"]
 
   webhook-claude:
     <<: *claude-common
-    profiles: ["claude"]
+    profiles: ["claude", "claude-webhook"]
     container_name: forgewright-webhook-claude
     restart: unless-stopped
     command: ["webhook"]
@@ -67,14 +71,14 @@ services:
 
   poller-opencode:
     <<: *opencode-common
-    profiles: ["opencode"]
+    profiles: ["opencode", "opencode-poll"]
     container_name: forgewright-poller-opencode
     restart: unless-stopped
     command: ["poll"]
 
   webhook-opencode:
     <<: *opencode-common
-    profiles: ["opencode"]
+    profiles: ["opencode", "opencode-webhook"]
     container_name: forgewright-webhook-opencode
     restart: unless-stopped
     command: ["webhook"]

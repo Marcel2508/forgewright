@@ -42,18 +42,31 @@ if [ ! -f "$INSTALL_DIR/docker/claude-state/.claude.json" ]; then
   $SUDO sh -c "printf '{}\n' > '$INSTALL_DIR/docker/claude-state/.claude.json'"
 fi
 
+# Decide which compose profile to bring up based on webhook_enabled.
+ACTIVE_PROFILE="${PROFILE}-poll"
+if [ -f "$INSTALL_DIR/config.yaml" ] && \
+   $SUDO grep -Eqi '^[[:space:]]*webhook_enabled[[:space:]]*:[[:space:]]*true[[:space:]]*$' "$INSTALL_DIR/config.yaml"; then
+  ACTIVE_PROFILE="$PROFILE"
+fi
+
 echo "==> pulling latest images (profile: $PROFILE)"
 (cd "$INSTALL_DIR" && $SUDO docker compose --profile "$PROFILE" pull)
 
-echo "==> recreating containers"
-(cd "$INSTALL_DIR" && $SUDO docker compose --profile "$PROFILE" up -d --force-recreate)
+# If we're updating to a poller-only setup, explicitly stop the webhook
+# container in case it was running from a previous (umbrella) install.
+if [ "$ACTIVE_PROFILE" != "$PROFILE" ]; then
+  (cd "$INSTALL_DIR" && $SUDO docker compose rm -fs "webhook-$PROFILE" 2>/dev/null || true)
+fi
+
+echo "==> recreating containers (profile: $ACTIVE_PROFILE)"
+(cd "$INSTALL_DIR" && $SUDO docker compose --profile "$ACTIVE_PROFILE" up -d --force-recreate)
 
 cat <<EOF
 
-Update complete (profile: $PROFILE).
+Update complete (profile: $ACTIVE_PROFILE).
   - Config untouched:  $INSTALL_DIR/config.yaml
   - .env untouched:    $INSTALL_DIR/.env
   - Volumes untouched: bot-state, bot-logs, claude-config, opencode-config
-  - Check status:      docker compose --profile $PROFILE ps
-  - Tail logs:         docker compose --profile $PROFILE logs -f
+  - Check status:      docker compose --profile $ACTIVE_PROFILE ps
+  - Tail logs:         docker compose --profile $ACTIVE_PROFILE logs -f
 EOF
