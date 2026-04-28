@@ -67,8 +67,20 @@ fi
 
 # --- Config + .env -----------------------------------------------------------
 
+if [ -d "$INSTALL_DIR/config.yaml" ]; then
+  echo "error: $INSTALL_DIR/config.yaml exists as a directory, not a file." >&2
+  echo "       This usually means 'docker compose up' ran before the file was" >&2
+  echo "       created, so Docker auto-created an empty placeholder. Remove it" >&2
+  echo "       and re-run this installer:" >&2
+  echo "         sudo rm -rf $INSTALL_DIR/config.yaml" >&2
+  exit 1
+fi
+
 if [ ! -f "$INSTALL_DIR/config.yaml" ]; then
-  $SUDO install -m 0640 "$SCRIPT_DIR/config.example.yaml" "$INSTALL_DIR/config.yaml"
+  # 0644 (not 0640): the in-container `forgewright` user is a non-root system
+  # user not in root's group, so it can't read a root-owned 0640 file. The
+  # config has no secrets by default — those go in .env or env vars.
+  $SUDO install -m 0644 "$SCRIPT_DIR/config.example.yaml" "$INSTALL_DIR/config.yaml"
   echo "   -> wrote $INSTALL_DIR/config.yaml (edit it!)"
 else
   echo "   -> $INSTALL_DIR/config.yaml already exists, leaving untouched"
