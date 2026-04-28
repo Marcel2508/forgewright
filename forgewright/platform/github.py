@@ -257,12 +257,13 @@ class GitHubPlatform(Platform):
             threads.setdefault(thread_id, []).append(note)
 
         for thread_id, notes in threads.items():
-            discussions.append(Discussion(id=str(thread_id), notes=notes))
+            discussions.append(
+                Discussion(id=f"review:{thread_id}", notes=notes))
 
         for c in issue_comments:
             note = _parse_note(c, "issue_comment")
             discussions.append(Discussion(
-                id=str(c["id"]), notes=[note]))
+                id=f"issue:{c['id']}", notes=[note]))
 
         return discussions
 
@@ -277,9 +278,13 @@ class GitHubPlatform(Platform):
         if not head_sha:
             return []
 
-        check_runs = list(self._paginate(
-            f"/repos/{owner_repo}/commits/{head_sha}/check-runs"))
-        return [_parse_pipeline(cr) for cr in check_runs]
+        runs_resp = self._req(
+            "GET",
+            f"/repos/{owner_repo}/actions/runs",
+            params={"head_sha": head_sha, "per_page": 100})
+        runs_resp.raise_for_status()
+        workflow_runs = runs_resp.json().get("workflow_runs", [])
+        return [_parse_pipeline(wr) for wr in workflow_runs]
 
     def pipeline_jobs(self, project_id: ProjectID,
                       pipeline_id: int | str) -> list[Job]:
@@ -342,7 +347,7 @@ class GitHubPlatform(Platform):
             "GET",
             f"/repos/{owner_repo}/pulls",
             params={"head": f"{owner_repo.split('/')[0]}:{branch}",
-                    "state": "all"})
+                    "state": "open"})
         r.raise_for_status()
         data = r.json()
         return _parse_pr(data[0]) if data else None
@@ -411,8 +416,18 @@ class GitHubPlatform(Platform):
     def reply_to_discussion(self, project_id: ProjectID, mr_number: int,
                             discussion_id: str, body: str) -> None:
         owner_repo = _owner_repo(project_id)
+
+        if discussion_id.startswith("issue:"):
+            self.comment_mr(project_id, mr_number, body)
+            return
+
+        if discussion_id.startswith("review:"):
+            raw_id = discussion_id[len("review:"):]
+        else:
+            raw_id = discussion_id
+
         try:
-            comment_id = int(discussion_id)
+            comment_id = int(raw_id)
         except ValueError:
             self.comment_mr(project_id, mr_number, body)
             return

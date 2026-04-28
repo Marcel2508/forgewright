@@ -257,7 +257,7 @@ class TestShouldProcessMR:
         assert go
         assert "new comment" in reason
 
-    def test_pipeline_change_triggers(self):
+    def test_pipeline_failure_triggers(self):
         mr = make_mr(source_branch="forgewright/issue-1", author="forgewright")
         notes = [make_note(note_id=1, author="alice")]
         pipes = [Pipeline(id=1, sha="abc", status="failed", web_url="")]
@@ -274,6 +274,45 @@ class TestShouldProcessMR:
             mr, notes, pipes, prev, "forgewright", "forgewright/")
         assert go
         assert "pipeline" in reason
+
+    def test_pipeline_pending_to_running_does_not_trigger(self):
+        """Transient CI status changes should not wake the agent — the bot
+        only has logic for the failed state. Triggering on every transition
+        causes the agent to run (and post a comment) twice for every clean
+        CI run."""
+        mr = make_mr(source_branch="forgewright/issue-1", author="forgewright")
+        notes = [make_note(note_id=1, author="alice")]
+        pipes = [Pipeline(id=1, sha="abc", status="running", web_url="")]
+        prev = {"fingerprint": {
+            "description_hash": fingerprint_mr(mr, notes, pipes, "forgewright")["description_hash"],
+            "last_note_id": 1,
+            "last_note_at": "2024-01-01T00:00:00Z",
+            "labels": [],
+            "pipeline_sha": "abc",
+            "pipeline_status": "pending",
+            "head_sha": "abc123",
+        }}
+        go, reason = should_process_mr(
+            mr, notes, pipes, prev, "forgewright", "forgewright/")
+        assert not go
+        assert "no meaningful trigger" in reason
+
+    def test_pipeline_running_to_success_does_not_trigger(self):
+        mr = make_mr(source_branch="forgewright/issue-1", author="forgewright")
+        notes = [make_note(note_id=1, author="alice")]
+        pipes = [Pipeline(id=1, sha="abc", status="success", web_url="")]
+        prev = {"fingerprint": {
+            "description_hash": fingerprint_mr(mr, notes, pipes, "forgewright")["description_hash"],
+            "last_note_id": 1,
+            "last_note_at": "2024-01-01T00:00:00Z",
+            "labels": [],
+            "pipeline_sha": "abc",
+            "pipeline_status": "running",
+            "head_sha": "abc123",
+        }}
+        go, reason = should_process_mr(
+            mr, notes, pipes, prev, "forgewright", "forgewright/")
+        assert not go
 
     def test_label_change_triggers(self):
         mr = make_mr(source_branch="forgewright/issue-1", author="forgewright",

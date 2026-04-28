@@ -185,10 +185,11 @@ class TestWebhookAuth:
 
 @patch("forgewright.webhook._process_event")
 class TestWebhookEventAcceptance:
-    """All events with a valid project id are accepted — process_project
-    handles the actual filtering via fingerprints."""
+    """All events return 202 (so the platform doesn't retry them), but
+    irrelevant events (push, star, fork, ping, …) are short-circuited at the
+    webhook layer instead of triggering a full process_project run."""
 
-    def test_push_event_accepted(self, _mock_process, client):
+    def test_push_event_ignored(self, mock_process, client):
         resp = client.post(
             "/webhook",
             data=json.dumps({"object_kind": "push", "project": {"id": 1, "path_with_namespace": "t/r"}}),
@@ -199,8 +200,13 @@ class TestWebhookEventAcceptance:
             },
         )
         assert resp.status_code == 202
+        assert resp.get_json()["status"] == "ignored"
+        time.sleep(0.05)
+        mock_process.assert_not_called()
 
-    def test_system_hook_accepted(self, _mock_process, client):
+    def test_system_hook_with_relevant_kind_processed(self, mock_process,
+                                                      client):
+        """A System Hook with a relevant object_kind is still processed."""
         resp = client.post(
             "/webhook",
             data=json.dumps({"object_kind": "issue", "project": {"id": 1, "path_with_namespace": "t/r"}}),
@@ -211,9 +217,12 @@ class TestWebhookEventAcceptance:
             },
         )
         assert resp.status_code == 202
+        assert resp.get_json()["status"] == "accepted"
+        time.sleep(0.05)
+        mock_process.assert_called_once()
 
-    def test_system_hook_with_push_accepted(self, _mock_process, client):
-        """System Hooks for push events should also be accepted."""
+    def test_system_hook_with_push_ignored(self, mock_process, client):
+        """System Hooks wrapping push events should be ignored, not processed."""
         resp = client.post(
             "/webhook",
             data=json.dumps({"object_kind": "push", "project": {"id": 1, "path_with_namespace": "t/r"}}),
@@ -224,8 +233,12 @@ class TestWebhookEventAcceptance:
             },
         )
         assert resp.status_code == 202
+        assert resp.get_json()["status"] == "ignored"
+        time.sleep(0.05)
+        mock_process.assert_not_called()
 
-    def test_missing_event_header_accepted(self, _mock_process, client):
+    def test_missing_event_header_with_relevant_kind_processed(
+            self, mock_process, client):
         payload = _issue_payload()
         resp = client.post(
             "/webhook",
@@ -234,6 +247,7 @@ class TestWebhookEventAcceptance:
             headers={"X-Gitlab-Token": "test-secret"},
         )
         assert resp.status_code == 202
+        assert resp.get_json()["status"] == "accepted"
 
     @pytest.mark.parametrize("event", [
         "Issue Hook", "Confidential Issue Hook",
@@ -253,7 +267,7 @@ class TestWebhookEventAcceptance:
         )
         assert resp.status_code == 202
 
-    def test_unknown_event_with_project_accepted(self, _mock_process, client):
+    def test_unknown_event_ignored(self, mock_process, client):
         resp = client.post(
             "/webhook",
             data=json.dumps({"object_kind": "something_new", "project": {"id": 42, "path_with_namespace": "t/r"}}),
@@ -264,6 +278,9 @@ class TestWebhookEventAcceptance:
             },
         )
         assert resp.status_code == 202
+        assert resp.get_json()["status"] == "ignored"
+        time.sleep(0.05)
+        mock_process.assert_not_called()
 
 
 class TestWebhookPayloadValidation:

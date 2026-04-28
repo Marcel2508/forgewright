@@ -224,9 +224,13 @@ class TestGitLabPlatformMethods:
                                          "target_branch": "main",
                                          "title": "MR"}]
         mock_resp.raise_for_status = MagicMock()
-        with patch.object(plat, "_req", return_value=mock_resp):
+        with patch.object(plat, "_req", return_value=mock_resp) as mock_req:
             mr = plat.find_mr_for_branch(1, "feat")
             assert mr.number == 5
+            # Must filter to opened — otherwise the bot would update closed
+            # or merged MRs that share the branch name instead of opening a
+            # new PR.
+            assert mock_req.call_args[1]["params"]["state"] == "opened"
 
     def test_find_mr_for_branch_not_found(self):
         plat = self._make_platform()
@@ -652,9 +656,11 @@ class TestGitHubPlatformMethods:
              "user": {"login": "dev"}},
         ]
         mock_resp.raise_for_status = MagicMock()
-        with patch.object(plat, "_req", return_value=mock_resp):
+        with patch.object(plat, "_req", return_value=mock_resp) as mock_req:
             mr = plat.find_mr_for_branch("owner/repo", "feat")
             assert mr.number == 5
+            # Must filter to open — see GitLab equivalent for rationale.
+            assert mock_req.call_args[1]["params"]["state"] == "open"
 
     def test_find_mr_for_branch_not_found(self):
         plat = self._make_platform()
@@ -683,7 +689,33 @@ class TestGitHubPlatformMethods:
             plat.comment_mr("owner/repo", 5, "comment text")
             assert "issues/5/comments" in mock_req.call_args[0][1]
 
-    def test_reply_to_discussion(self):
+    def test_reply_to_review_discussion(self):
+        plat = self._make_platform()
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        with patch.object(plat, "_req", return_value=mock_resp) as mock_req:
+            plat.reply_to_discussion("owner/repo", 5, "review:123456", "reply")
+            assert "/pulls/5/comments" in mock_req.call_args[0][1]
+            payload = mock_req.call_args[1]["json"]
+            assert payload["in_reply_to"] == 123456
+            assert payload["body"] == "reply"
+
+    def test_reply_to_issue_discussion_falls_back_to_top_level(self):
+        """GitHub issue comments don't support threading, so we post a new
+        top-level comment instead of trying (and failing with 422) to use
+        the pull request review-comment endpoint."""
+        plat = self._make_platform()
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        with patch.object(plat, "_req", return_value=mock_resp) as mock_req:
+            plat.reply_to_discussion("owner/repo", 5, "issue:100", "reply")
+            assert "/issues/5/comments" in mock_req.call_args[0][1]
+            assert mock_req.call_args[1]["json"]["body"] == "reply"
+            assert "in_reply_to" not in mock_req.call_args[1]["json"]
+
+    def test_reply_to_discussion_unprefixed_numeric_id(self):
+        """Backwards compat: unprefixed numeric ids are treated as review
+        comment ids."""
         plat = self._make_platform()
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
@@ -760,18 +792,78 @@ class TestGitHubPlatformMethods:
             "head": {"sha": "abc123"},
         }
         pr_resp.raise_for_status = MagicMock()
-        checks_resp = MagicMock()
-        checks_resp.json.return_value = [
-            {"id": 1, "head_sha": "abc123", "status": "completed",
-             "conclusion": "success", "html_url": "..."},
-        ]
-        checks_resp.links = {}
-        checks_resp.raise_for_status = MagicMock()
+        runs_resp = MagicMock()
+        runs_resp.json.return_value = {
+            "total_count": 1,
+            "workflow_runs": [
+                {"id": 9876, "head_sha": "abc123", "status": "completed",
+                 "conclusion": "success", "html_url": "..."},
+            ],
+        }
+        runs_resp.raise_for_status = MagicMock()
         with patch.object(plat, "_req",
-                          side_effect=[pr_resp, checks_resp]):
+                          side_effect=[pr_resp, runs_resp]) as mock_req:
             pipelines = plat.mr_pipelines("owner/repo", 5)
             assert len(pipelines) == 1
+            assert pipelines[0].id == 9876
             assert pipelines[0].status == "success"
+            # Second call must hit /actions/runs with head_sha filter so the
+            # returned id is a workflow_run id (compatible with pipeline_jobs).
+            runs_call = mock_req.call_args_list[1]
+            assert "/actions/runs" in runs_call[0][1]
+            assert runs_call[1]["params"]["head_sha"] == "abc123"
+
+    def test_mr_pipelines_no_head_sha(self):
+        plat = self._make_platform()
+        pr_resp = MagicMock()
+        pr_resp.json.return_value = {"head": {}}
+        pr_resp.raise_for_status = MagicMock()
+        with patch.object(plat, "_req", return_value=pr_resp):
+            assert plat.mr_pipelines("owner/repo", 5) == []
+
+    def test_mr_pipelines_empty_runs(self):
+        plat = self._make_platform()
+        pr_resp = MagicMock()
+        pr_resp.json.return_value = {"head": {"sha": "abc"}}
+        pr_resp.raise_for_status = MagicMock()
+        runs_resp = MagicMock()
+        runs_resp.json.return_value = {"total_count": 0, "workflow_runs": []}
+        runs_resp.raise_for_status = MagicMock()
+        with patch.object(plat, "_req", side_effect=[pr_resp, runs_resp]):
+            assert plat.mr_pipelines("owner/repo", 5) == []
+
+    def test_pipeline_id_chain_uses_workflow_run_id(self):
+        """End-to-end check: id from mr_pipelines must work in pipeline_jobs.
+
+        Regression for the bug where mr_pipelines returned check-run ids while
+        pipeline_jobs called /actions/runs/{id}/jobs (which expects
+        workflow_run ids), causing 404s on every failing-pipeline trigger.
+        """
+        plat = self._make_platform()
+        pr_resp = MagicMock()
+        pr_resp.json.return_value = {"head": {"sha": "abc"}}
+        pr_resp.raise_for_status = MagicMock()
+        runs_resp = MagicMock()
+        runs_resp.json.return_value = {
+            "workflow_runs": [
+                {"id": 4242, "head_sha": "abc", "status": "completed",
+                 "conclusion": "failure", "html_url": "..."},
+            ],
+        }
+        runs_resp.raise_for_status = MagicMock()
+        jobs_resp = MagicMock()
+        jobs_resp.json.return_value = {
+            "jobs": [{"id": 9, "name": "build", "status": "completed",
+                      "conclusion": "failure"}],
+        }
+        jobs_resp.raise_for_status = MagicMock()
+        with patch.object(plat, "_req",
+                          side_effect=[pr_resp, runs_resp, jobs_resp]) as mock_req:
+            pipelines = plat.mr_pipelines("owner/repo", 5)
+            jobs = plat.pipeline_jobs("owner/repo", pipelines[0].id)
+            assert jobs[0].name == "build"
+            jobs_call = mock_req.call_args_list[2]
+            assert "/actions/runs/4242/jobs" in jobs_call[0][1]
 
 
 class TestGitHubCloneUrl:
@@ -956,7 +1048,10 @@ class TestGitHubMrDiscussions:
         with self._mock_paginate(plat, issue_comments, []):
             discussions = plat.mr_discussions("owner/repo", 5)
             assert len(discussions) == 1
-            assert discussions[0].id == "100"
+            # IDs are prefixed so reply_to_discussion can route issue
+            # comments (which can't be threaded on GitHub) differently from
+            # review comments.
+            assert discussions[0].id == "issue:100"
             assert discussions[0].notes[0].body == "general comment"
             assert discussions[0].notes[0].type == "issue_comment"
 
@@ -971,7 +1066,7 @@ class TestGitHubMrDiscussions:
         with self._mock_paginate(plat, [], review_comments):
             discussions = plat.mr_discussions("owner/repo", 5)
             assert len(discussions) == 1
-            assert discussions[0].id == "200"
+            assert discussions[0].id == "review:200"
             assert len(discussions[0].notes) == 2
             assert discussions[0].notes[0].body == "review root"
             assert discussions[0].notes[1].body == "reply to review"

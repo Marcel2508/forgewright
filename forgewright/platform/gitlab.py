@@ -279,7 +279,7 @@ class GitLabPlatform(Platform):
         r = self._req(
             "GET",
             f"/projects/{project_id}/merge_requests",
-            params={"source_branch": branch, "state": "all"})
+            params={"source_branch": branch, "state": "opened"})
         r.raise_for_status()
         data = r.json()
         return _parse_mr(data[0]) if data else None

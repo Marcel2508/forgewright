@@ -133,8 +133,13 @@ def should_process_mr(mr: MergeRequest, notes: list[Note],
         reasons.append("new comment")
     if fp["labels"] != prev_fp.get("labels"):
         reasons.append("labels changed")
-    if fp["pipeline_status"] != prev_fp.get("pipeline_status"):
-        reasons.append(f"pipeline -> {fp['pipeline_status']}")
+    # Only react to the pipeline transitioning into the failed state — that is
+    # the only status the handler actually has logic for. Tracking every
+    # pending → running → success transition fires the agent (and posts a
+    # comment) twice for every clean CI run.
+    if (fp["pipeline_status"] != prev_fp.get("pipeline_status")
+            and fp["pipeline_status"] == "failed"):
+        reasons.append("pipeline failed")
     if fp["head_sha"] != prev_fp.get("head_sha"):
         reasons.append("new commits on branch")
     if fp["description_hash"] != prev_fp.get("description_hash"):

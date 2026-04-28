@@ -124,18 +124,26 @@ def create_app(cfg: Config) -> Flask:
         if not payload:
             return jsonify({"error": "invalid JSON"}), 400
 
-        event_type, project_id, _ = (
+        event_type, project_id, is_relevant = (
             webhook_platform.parse_webhook_event(request.headers, payload))
-
-        if not project_id:
-            logging.warning("webhook: no project id in payload")
-            return jsonify({"error": "no project id"}), 400
 
         project_name = (
             (payload.get("project") or {}).get("path_with_namespace")
             or (payload.get("repository") or {}).get("full_name")
             or "?"
         )
+
+        if not is_relevant:
+            logging.info(
+                "webhook: ignoring %s for %s (event not relevant)",
+                event_type, project_name,
+            )
+            return jsonify({"status": "ignored", "event": event_type}), 202
+
+        if not project_id:
+            logging.warning("webhook: no project id in payload")
+            return jsonify({"error": "no project id"}), 400
+
         logging.info(
             "webhook: received %s for %s (project %s)",
             event_type, project_name, project_id,
