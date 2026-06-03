@@ -62,7 +62,12 @@ class OpenCodeAgent(Agent):
         # prompting) and prints the assistant response to stdout. The model is
         # given as provider/model; the provider is defined in
         # ~/.config/opencode/opencode.json.
-        cmd = [self._binary, "run"]
+        # Anchor opencode to the worktree explicitly. `opencode run` starts an
+        # internal server that otherwise re-discovers its own project directory,
+        # which can land outside the worktree (making every path "external" and
+        # auto-rejected in headless mode). Passing --dir is more reliable than
+        # depending on the process cwd alone.
+        cmd = [self._binary, "run", "--dir", str(cwd)]
         if self._model:
             cmd += ["--model", self._model]
         cmd.append(prompt)

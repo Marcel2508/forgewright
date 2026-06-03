@@ -253,6 +253,8 @@ class TestOpenCodeAgent:
         assert cmd[0] == "opencode"
         assert cmd[1] == "run"          # sst/opencode headless subcommand
         assert cmd[-1] == "do stuff"    # prompt passed as positional arg
+        assert "--dir" in cmd           # anchored to the worktree explicitly
+        assert str(tmp_path) in cmd
 
     @patch("forgewright.agent.opencode.subprocess.Popen")
     def test_run_with_model(self, mock_popen, tmp_path):
