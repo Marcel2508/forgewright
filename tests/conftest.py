@@ -49,6 +49,11 @@ class MockPlatform(Platform):
 
     def __init__(self):
         self.calls: list[tuple[str, tuple, dict]] = []
+        # Authorization: per-username access levels (0..50). Anything not listed
+        # falls back to default_access_level. Tests can populate access_levels
+        # to exercise the authorization_min_role gate.
+        self.access_levels: dict[str, int] = {}
+        self.default_access_level: int = 50
 
     def _record(self, name: str, *args, **kwargs):
         self.calls.append((name, args, kwargs))
@@ -63,6 +68,11 @@ class MockPlatform(Platform):
         return Project(id=project_id, path="test/proj",
                        web_url="https://git.example.com/test/proj",
                        default_branch="main", http_clone_url="")
+
+    def user_access_level(self, project_id: ProjectID, user: User) -> int:
+        if user is None or not user.username:
+            return 0
+        return self.access_levels.get(user.username, self.default_access_level)
 
     def list_issues(self, project_id: ProjectID,
                     updated_after: str | None) -> list[Issue]:
@@ -240,7 +250,8 @@ def make_note(note_id: int = 1, author: str = "alice", body: str = "hello",
 def make_issue(number: int = 1, title: str = "Test issue",
                description: str = "A test", updated_at: str = "2024-01-01",
                labels: list[str] | None = None,
-               web_url: str = "https://git.example.com/issues/1") -> Issue:
+               web_url: str = "https://git.example.com/issues/1",
+               author: str = "alice") -> Issue:
     return Issue(
         number=number,
         title=title,
@@ -248,6 +259,7 @@ def make_issue(number: int = 1, title: str = "Test issue",
         updated_at=updated_at,
         labels=labels or [],
         web_url=web_url,
+        author=User(username=author),
     )
 
 

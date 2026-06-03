@@ -194,6 +194,7 @@ class TestMain:
             f"lock_dir: {tmp_path / 'locks'}\n"
             f"log_file: {tmp_path / 'bot.log'}\n"
             f"webhook_enabled: true\n"
+            f"webhook_secret: s3cret\n"  # required: serve refuses without one
         )
 
         with patch("sys.argv", ["forgewright", "--config", str(config_file),

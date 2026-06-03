@@ -31,6 +31,14 @@ class ClaudeCodeAgent(Agent):
             cmd += ["--model", self._model]
 
         env = os.environ.copy()
+        # Keep high-privilege forge credentials out of the agent's environment:
+        # the agent runs with --dangerously-skip-permissions on prompts built
+        # from untrusted issue/MR text, so a prompt-injection payload must not be
+        # able to read and exfiltrate them. The agent never needs these (git push
+        # is handled by the wrapper via GIT_ASKPASS in a separate subprocess).
+        for secret_var in ("PLATFORM_TOKEN", "GITLAB_TOKEN", "GITHUB_TOKEN",
+                           "FORGEWRIGHT_GIT_TOKEN", "WEBHOOK_SECRET"):
+            env.pop(secret_var, None)
         env.setdefault("CI", "1")
 
         live_log = cwd / ".claude" / "claude-live.log"

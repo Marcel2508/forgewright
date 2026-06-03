@@ -2,26 +2,33 @@
 
 from __future__ import annotations
 
-from forgewright.helpers import shortdt
+from forgewright.helpers import parse_ts, shortdt
 from forgewright.types import DiffChange, Discussion, Note
 
 
 def notes_from_discussions(discussions: list[Discussion]) -> list[Note]:
-    """Flatten discussions into a flat list of notes (for fingerprinting etc.)."""
-    out = []
+    """Flatten discussions into a chronologically-sorted flat list of notes.
+
+    Sorting by ``created_at`` is what makes "newest note" well-defined for
+    fingerprinting: GitHub serves issue comments and review comments from two
+    endpoints with independent ID counters, and a reply can land on an older
+    GitLab thread, so list position is not chronological on its own.
+    """
+    out: list[Note] = []
     for d in discussions:
-        for n in d.notes:
-            out.append(n)
+        out.extend(d.notes)
+    out.sort(key=lambda n: (parse_ts(n.created_at), str(n.id)))
     return out
 
 
 def format_notes(notes: list[Note], limit: int = 40) -> str:
     if not notes:
         return "_(no comments)_"
+    # Filter system notes BEFORE slicing so a burst of system notes can't push
+    # the user's actual request out of the window.
+    user_notes = [n for n in notes if not n.system]
     lines = []
-    for n in notes[-limit:]:
-        if n.system:
-            continue
+    for n in user_notes[-limit:]:
         ts = shortdt(n.created_at)
         author = n.author.username
         body = n.body.strip()

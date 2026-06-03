@@ -7,6 +7,7 @@ import logging
 import re
 import subprocess
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from forgewright.config import _mention_re
@@ -15,6 +16,27 @@ from forgewright.config import _mention_re
 def slugify(text: str, max_len: int = 40) -> str:
     text = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
     return text[:max_len].rstrip("-") or "task"
+
+
+def parse_ts(s: str | None) -> datetime:
+    """Parse an ISO-8601 timestamp into a tz-aware datetime (UTC fallback).
+
+    Handles the trailing ``Z`` (GitHub) and explicit offsets (GitLab), as well
+    as date-only and naive values.  Anything unparseable sorts as the minimum
+    time, so it never raises in sort keys / comparisons.
+    """
+    if not s:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    txt = s.strip()
+    if txt.endswith("Z"):
+        txt = txt[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(txt)
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def has_mention(text: str | None, bot_username: str = "claude") -> bool:

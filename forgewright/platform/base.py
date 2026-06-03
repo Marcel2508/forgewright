@@ -44,6 +44,16 @@ class Platform(ABC):
     def project(self, project_id: ProjectID) -> Project:
         """Fetch a single project by ID."""
 
+    @abstractmethod
+    def user_access_level(self, project_id: ProjectID, user: User) -> int:
+        """Return *user*'s normalized access level on the project.
+
+        Levels follow the GitLab scale so both platforms map onto one axis:
+        0=none, 10=read/guest, 20=triage/reporter, 30=write/developer,
+        40=maintain(er), 50=admin/owner.  Used to gate who may interact with
+        the bot.  Implementations should return 0 for non-members.
+        """
+
     # -- Issues ----------------------------------------------------------------
 
     @abstractmethod

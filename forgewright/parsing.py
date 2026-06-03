@@ -11,11 +11,70 @@ REPLY_SECTION_RE = re.compile(
 INLINE_SECTION_RE = re.compile(
     r"^##\s+Inline:\s+(.+?):(\d+)\s*$", re.MULTILINE)
 
+# One regex that recognizes all three section headers, so a single pass can
+# partition a summary into inline comments, threaded replies, and general text
+# without double-counting (the cause of inline comments being posted twice).
+_ANY_SECTION_RE = re.compile(
+    r"^##[ \t]+(?:"
+    r"Inline:[ \t]+(?P<file>.+?):(?P<line>\d+)"
+    r"|Reply to discussion[ \t]+(?P<disc>\S+)"
+    r"|General"
+    r")[ \t]*$",
+    re.MULTILINE,
+)
+
+
+def parse_sections(summary: str) -> tuple[list[dict], dict[str, str], str]:
+    """Partition an agent summary into (inlines, replies, general) in one pass.
+
+    - inlines: list of ``{"file_path", "line", "body"}`` from ``## Inline:`` blocks
+    - replies: ``{discussion_id: body}`` from ``## Reply to discussion`` blocks
+    - general: everything else (preamble + ``## General`` blocks), joined
+
+    Unlike calling the per-type parsers separately, this never attributes the
+    same text to more than one bucket.
+    """
+    if not summary:
+        return [], {}, ""
+
+    matches = list(_ANY_SECTION_RE.finditer(summary))
+    if not matches:
+        stripped = re.sub(r"^##\s+General\s*\n", "", summary, count=1,
+                          flags=re.MULTILINE).strip()
+        return [], {}, stripped
+
+    inlines: list[dict] = []
+    replies: dict[str, str] = {}
+    general_parts: list[str] = []
+
+    preamble = summary[:matches[0].start()].strip()
+    if preamble:
+        general_parts.append(preamble)
+
+    for i, m in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(summary)
+        body = summary[m.end():end].strip()
+        if m.group("file") is not None:
+            inlines.append({
+                "file_path": m.group("file").strip(),
+                "line": int(m.group("line")),
+                "body": body,
+            })
+        elif m.group("disc") is not None:
+            replies[m.group("disc").strip()] = body
+        else:  # ## General
+            if body:
+                general_parts.append(body)
+
+    return inlines, replies, "\n\n".join(general_parts)
+
 
 def read_summary(wt: Path) -> str:
     p = wt / ".claude" / "last-run-summary.md"
     if p.exists():
-        return p.read_text().strip()
+        # errors="replace": a non-UTF-8 summary must not crash the handler
+        # (which would abort the run and re-process the item every cycle).
+        return p.read_text(encoding="utf-8", errors="replace").strip()
     return ""
 
 

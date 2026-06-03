@@ -59,7 +59,19 @@ def _parse_issue(data: dict) -> Issue:
         web_url=data.get("html_url", ""),
         updated_at=data.get("updated_at", ""),
         labels=[lb["name"] for lb in (data.get("labels") or [])],
+        author=_parse_user(data.get("user") or {}),
     )
+
+
+# GitHub repository permission -> normalized access level (see authz.ROLE_LEVELS).
+_GH_ROLE_LEVELS = {
+    "admin": 50,
+    "maintain": 40,
+    "write": 30,
+    "triage": 20,
+    "read": 10,
+    "none": 0,
+}
 
 
 def _parse_pr(data: dict) -> MergeRequest:
@@ -205,6 +217,21 @@ class GitHubPlatform(Platform):
         r.raise_for_status()
         return _parse_user(r.json())
 
+    def user_access_level(self, project_id: ProjectID, user: User) -> int:
+        """Normalized repo permission for *user* (0=none .. 50=admin)."""
+        if not user or not user.username:
+            return 0
+        r = self._req(
+            "GET",
+            f"/repos/{_owner_repo(project_id)}/collaborators/"
+            f"{user.username}/permission")
+        if r.status_code == 404:
+            return 0  # not a collaborator
+        r.raise_for_status()
+        data = r.json()
+        role = (data.get("role_name") or data.get("permission") or "").lower()
+        return _GH_ROLE_LEVELS.get(role, 0)
+
     def list_member_projects(self) -> list[Project]:
         return [_parse_project(d) for d in self._paginate(
             "/user/repos",
@@ -228,11 +255,19 @@ class GitHubPlatform(Platform):
 
     def list_mrs(self, project_id: ProjectID,
                  updated_after: str | None) -> list[MergeRequest]:
-        params: dict[str, str] = {"state": "open", "sort": "updated"}
-        if updated_after:
-            params["since"] = updated_after
-        return [_parse_pr(d) for d in self._paginate(
-            f"/repos/{_owner_repo(project_id)}/pulls", **params)]
+        # GET /pulls does NOT support a `since` filter (it is silently ignored),
+        # so sort by updated desc and stop client-side once we pass the cutoff.
+        from forgewright.helpers import parse_ts
+        params: dict[str, str] = {
+            "state": "open", "sort": "updated", "direction": "desc"}
+        cutoff = parse_ts(updated_after) if updated_after else None
+        out: list[MergeRequest] = []
+        for d in self._paginate(
+                f"/repos/{_owner_repo(project_id)}/pulls", **params):
+            if cutoff and parse_ts(d.get("updated_at")) < cutoff:
+                break  # results are newest-first; everything after is older
+            out.append(_parse_pr(d))
+        return out
 
     def issue_notes(self, project_id: ProjectID,
                     issue_number: int) -> list[Note]:
@@ -265,6 +300,13 @@ class GitHubPlatform(Platform):
             discussions.append(Discussion(
                 id=f"issue:{c['id']}", notes=[note]))
 
+        # Issue comments and review-thread comments come from two endpoints with
+        # independent ID counters; order the merged list by each thread's
+        # earliest note so chronology (and the newest-note fingerprint) is sane.
+        from forgewright.helpers import parse_ts
+        discussions.sort(
+            key=lambda d: parse_ts(d.notes[0].created_at) if d.notes
+            else parse_ts(None))
         return discussions
 
     def mr_pipelines(self, project_id: ProjectID,
@@ -284,7 +326,27 @@ class GitHubPlatform(Platform):
             params={"head_sha": head_sha, "per_page": 100})
         runs_resp.raise_for_status()
         workflow_runs = runs_resp.json().get("workflow_runs", [])
-        return [_parse_pipeline(wr) for wr in workflow_runs]
+
+        # A head SHA can have several workflows, each possibly re-run multiple
+        # times. Keep only the latest run per workflow (highest run id), then
+        # order so any failed workflow sorts first — callers look at
+        # ``pipelines[0]`` as the effective status, so a failing workflow must
+        # not be masked by a passing one that merely ran more recently.
+        latest: dict[Any, dict] = {}
+        for wr in workflow_runs:
+            key = wr.get("workflow_id") or wr.get("name") or wr.get("id")
+            cur = latest.get(key)
+            if cur is None or (wr.get("id") or 0) > (cur.get("id") or 0):
+                latest[key] = wr
+        ranked = sorted(
+            latest.values(),
+            key=lambda wr: (
+                0 if _map_check_status(wr.get("status", ""),
+                                       wr.get("conclusion")) == "failed" else 1,
+                -(wr.get("id") or 0),
+            ),
+        )
+        return [_parse_pipeline(wr) for wr in ranked]
 
     def pipeline_jobs(self, project_id: ProjectID,
                       pipeline_id: int | str) -> list[Job]:
@@ -493,7 +555,8 @@ class GitHubPlatform(Platform):
     def validate_webhook(self, headers: dict, body: bytes,
                          secret: str) -> bool:
         if not secret:
-            return True
+            # Fail closed: an unconfigured secret must not accept all callers.
+            return False
         signature = headers.get("X-Hub-Signature-256", "")
         if not signature.startswith("sha256="):
             return False

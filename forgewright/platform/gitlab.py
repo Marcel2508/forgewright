@@ -100,6 +100,7 @@ def _parse_issue(data: dict) -> Issue:
         web_url=data.get("web_url", ""),
         updated_at=data.get("updated_at", ""),
         labels=data.get("labels") or [],
+        author=_parse_user(data.get("author") or {}),
     )
 
 
@@ -197,6 +198,36 @@ class GitLabPlatform(Platform):
         r = self._req("GET", "/user")
         r.raise_for_status()
         return _parse_user(r.json())
+
+    def user_access_level(self, project_id: ProjectID, user: User) -> int:
+        """Normalized repo permission for *user* (GitLab access_level, 0..50).
+
+        Uses the members endpoint that includes inherited (group) membership.
+        Falls back to a username query when the numeric user id is unknown.
+        """
+        if not user:
+            return 0
+        member = None
+        if user.id is not None:
+            r = self._req(
+                "GET", f"/projects/{project_id}/members/all/{user.id}",
+                params={})
+            if r.status_code == 404:
+                return 0
+            r.raise_for_status()
+            member = r.json()
+        elif user.username:
+            r = self._req(
+                "GET", f"/projects/{project_id}/members/all",
+                params={"query": user.username})
+            r.raise_for_status()
+            for m in r.json():
+                if m.get("username") == user.username:
+                    member = m
+                    break
+        if not member:
+            return 0
+        return int(member.get("access_level", 0) or 0)
 
     def list_member_projects(self) -> list[Project]:
         return [_parse_project(d) for d in self._paginate(
@@ -387,7 +418,8 @@ class GitLabPlatform(Platform):
     def validate_webhook(self, headers: dict, body: bytes,
                          secret: str) -> bool:
         if not secret:
-            return True
+            # Fail closed: an unconfigured secret must not accept all callers.
+            return False
         token = headers.get("X-Gitlab-Token", "")
         return hmac.compare_digest(token, secret)
 

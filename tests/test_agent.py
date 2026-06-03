@@ -251,8 +251,8 @@ class TestOpenCodeAgent:
 
         cmd = mock_popen.call_args[0][0]
         assert cmd[0] == "opencode"
-        assert "--non-interactive" in cmd
-        assert "--prompt" in cmd
+        assert cmd[1] == "run"          # sst/opencode headless subcommand
+        assert cmd[-1] == "do stuff"    # prompt passed as positional arg
 
     @patch("forgewright.agent.opencode.subprocess.Popen")
     def test_run_with_model(self, mock_popen, tmp_path):
@@ -270,3 +270,30 @@ class TestOpenCodeAgent:
         cmd = mock_popen.call_args[0][0]
         assert "--model" in cmd
         assert "gpt-4" in cmd
+
+    def test_clean_output_strips_noise(self):
+        from forgewright.agent.opencode import _clean_opencode_output
+        raw = ("Performing one time database migration, may take a few "
+               "minutes...\nsqlite-migration:done\nDatabase migration "
+               "complete.\n\x1b[0m\n> build · qwen3.6:35b-a3b-q4_K_M-256k"
+               "\n\x1b[0m\n2+2 equals 4.\n")
+        assert _clean_opencode_output(raw) == "2+2 equals 4."
+
+    @patch("forgewright.agent.opencode.subprocess.Popen")
+    def test_run_falls_back_to_stdout_when_no_summary(self, mock_popen,
+                                                      tmp_path):
+        # opencode answered in stdout but did NOT write last-run-summary.md.
+        proc = MagicMock()
+        proc.stdout = iter([
+            "\x1b[0m\n",
+            "> build · qwen3.6:35b-a3b-q4_K_M-256k\n",
+            "Today's date is Wednesday, June 3, 2026.\n",
+        ])
+        proc.wait.return_value = 0
+        proc.returncode = 0
+        mock_popen.return_value = proc
+        (tmp_path / ".claude").mkdir()  # no last-run-summary.md inside
+
+        result = OpenCodeAgent().run("what day is it?", tmp_path)
+        assert result.ok is True
+        assert result.summary == "Today's date is Wednesday, June 3, 2026."
