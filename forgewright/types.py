@@ -60,6 +60,7 @@ class Issue:
     web_url: str
     updated_at: str
     labels: list[str] = field(default_factory=list)
+    author: User | None = None
 
 
 @dataclass

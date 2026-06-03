@@ -12,6 +12,11 @@ from typing import TYPE_CHECKING
 MAX_LOG_CHARS_PER_JOB = 6000
 MAX_LOG_CHARS_TOTAL = 16000
 
+from forgewright.authz import (
+    filter_discussions,
+    filter_notes,
+    make_authorizer,
+)
 from forgewright.decision import (
     extract_user_instructions,
     fingerprint_issue,
@@ -32,7 +37,7 @@ from forgewright.git import (
     make_worktree,
     push_branch,
 )
-from forgewright.helpers import file_lock, run, slugify
+from forgewright.helpers import file_lock, parse_ts, run, slugify
 from forgewright.posting import post_mr_responses, post_review_comments
 from forgewright.prompts import ISSUE_PROMPT, MR_REVIEW_PROMPT, MR_UPDATE_PROMPT
 from forgewright.types import (
@@ -222,13 +227,15 @@ def handle_mr_review(cfg: Config, platform: Platform, agent: Agent,
                      state: State, project: Project,
                      mr: MergeRequest, discussions: list[Discussion],
                      pipelines: list[Pipeline],
-                     prev: dict | None, reason: str) -> None:
+                     prev: dict | None, reason: str,
+                     is_authorized=None) -> None:
     """Handle an MR in review mode."""
     pid = project.id
     number = mr.number
     branch = mr.source_branch
     base_branch = mr.target_branch or project.default_branch or "main"
     notes = notes_from_discussions(discussions)
+    pushed = ""
 
     lock_path = cfg.lock_dir / f"{pid}-review-{slugify(branch, 80)}.lock"
     with file_lock(lock_path) as ok:
@@ -250,7 +257,7 @@ def handle_mr_review(cfg: Config, platform: Platform, agent: Agent,
             discussion_block = format_discussions(
                 discussions, bot_username=cfg.bot_username)
             user_instructions = extract_user_instructions(
-                mr, notes, cfg.bot_username)
+                mr, notes, cfg.bot_username, is_authorized)
 
             prompt = MR_REVIEW_PROMPT.format(
                 repo_path=project.path,
@@ -312,10 +319,15 @@ def handle_mr_review(cfg: Config, platform: Platform, agent: Agent,
         finally:
             cleanup_worktree(mirror, wt)
 
+    fp = fingerprint_mr(mr, notes, pipelines, cfg.bot_username)
+    if pushed:
+        # The agent's own push moves head_sha; record the pushed SHA so the
+        # next poll doesn't re-trigger the bot on its own commits.
+        fp["head_sha"] = pushed
     proj = state.proj(pid)
     proj["merge_requests"][str(number)] = {
         "branch": branch,
-        "fingerprint": fingerprint_mr(mr, notes, pipelines, cfg.bot_username),
+        "fingerprint": fp,
         "last_run_at": datetime.now(timezone.utc).isoformat(),
     }
     state.save()
@@ -342,14 +354,15 @@ def handle_mr(cfg: Config, platform: Platform, agent: Agent,
         wt = make_worktree(cfg, mirror, pid, branch, base_branch)
         try:
             prev_fp = (prev or {}).get("fingerprint") or {}
-            prev_note_id = prev_fp.get("last_note_id") or 0
+            prev_note_at = prev_fp.get("last_note_at")
+            cutoff = parse_ts(prev_note_at) if prev_note_at else None
             new_discussions = []
             for d in discussions:
                 new_notes_in_d = [
                     n for n in d.notes
                     if not n.system
                     and n.author.username != cfg.bot_username
-                    and (not prev_note_id or n.id > prev_note_id)
+                    and (cutoff is None or parse_ts(n.created_at) > cutoff)
                 ]
                 if new_notes_in_d:
                     new_discussions.append(d)
@@ -415,10 +428,15 @@ def handle_mr(cfg: Config, platform: Platform, agent: Agent,
         finally:
             cleanup_worktree(mirror, wt)
 
+    fp = fingerprint_mr(mr, notes, pipelines, cfg.bot_username)
+    if pushed:
+        # The agent's own push moves head_sha; record the pushed SHA so the
+        # next poll doesn't re-trigger the bot on its own commits.
+        fp["head_sha"] = pushed
     proj = state.proj(pid)
     proj["merge_requests"][str(number)] = {
         "branch": branch,
-        "fingerprint": fingerprint_mr(mr, notes, pipelines, cfg.bot_username),
+        "fingerprint": fp,
         "last_run_at": datetime.now(timezone.utc).isoformat(),
     }
     state.save()
@@ -433,9 +451,17 @@ def process_project(cfg: Config, platform: Platform, agent: Agent,
     proj_state = state.proj(pid)
     last_checked = proj_state.get("last_checked_at")
     updated_after = last_checked
+    # Capture the cutoff for the NEXT poll BEFORE doing any work, so updates that
+    # land while this run is in progress are still picked up next time.
+    run_started_at = datetime.now(timezone.utc).isoformat()
 
     logging.info("PROJECT %s (since %s)", project.path,
                  shortdt(last_checked))
+
+    authorized = make_authorizer(platform, project, cfg)
+    if authorized is not None:
+        logging.info("PROJECT %s: authorization enabled (min role %s)",
+                     project.path, cfg.authorization_min_role)
 
     earliest_crash_ts: str | None = None
 
@@ -452,9 +478,11 @@ def process_project(cfg: Config, platform: Platform, agent: Agent,
         except Exception as e:
             logging.warning("issue %d notes fetch failed: %s", number, e)
             continue
+        if authorized is not None:
+            notes = filter_notes(notes, authorized)
         prev = proj_state["issues"].get(str(number))
         go, reason = should_process_issue(issue, notes, prev,
-                                          cfg.bot_username)
+                                          cfg.bot_username, authorized)
         if not go:
             logging.debug("issue %d skip: %s", number, reason)
             continue
@@ -473,10 +501,13 @@ def process_project(cfg: Config, platform: Platform, agent: Agent,
         except Exception as e:
             logging.warning("mr %d fetch failed: %s", number, e)
             continue
+        if authorized is not None:
+            discussions = filter_discussions(discussions, authorized)
         notes = notes_from_discussions(discussions)
         prev = proj_state["merge_requests"].get(str(number))
         go, reason = should_process_mr(
-            mr, notes, pipelines, prev, cfg.bot_username, cfg.branch_prefix)
+            mr, notes, pipelines, prev, cfg.bot_username, cfg.branch_prefix,
+            authorized)
         if not go:
             logging.debug("mr %d skip: %s", number, reason)
             continue
@@ -486,7 +517,8 @@ def process_project(cfg: Config, platform: Platform, agent: Agent,
                 logging.info("mr %d REVIEW MODE (not authored by bot)",
                              number)
                 handle_mr_review(cfg, platform, agent, state, project, mr,
-                                 discussions, pipelines, prev, reason)
+                                 discussions, pipelines, prev, reason,
+                                 authorized)
             else:
                 handle_mr(cfg, platform, agent, state, project, mr,
                           discussions, pipelines, prev, reason)
@@ -500,5 +532,7 @@ def process_project(cfg: Config, platform: Platform, agent: Agent,
             shortdt(earliest_crash_ts))
         proj_state["last_checked_at"] = earliest_crash_ts
     else:
-        proj_state["last_checked_at"] = datetime.now(timezone.utc).isoformat()
+        # Use the run-start time (not "now"): anything updated mid-run is then
+        # re-evaluated next poll (fingerprints dedupe already-handled items).
+        proj_state["last_checked_at"] = run_started_at
     state.save()

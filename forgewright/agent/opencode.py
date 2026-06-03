@@ -12,12 +12,35 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import threading
 from pathlib import Path
 
 from forgewright.agent.base import Agent, AgentResult
 from forgewright.parsing import read_summary
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_NOISE_PREFIXES = (
+    "Performing one time database migration",
+    "sqlite-migration",
+    "Database migration complete",
+)
+
+
+def _clean_opencode_output(text: str) -> str:
+    """Strip opencode's ANSI codes, startup/migration chatter and the
+    ``> build · <model>`` banner, leaving the assistant's actual response."""
+    text = _ANSI_RE.sub("", text)
+    lines = []
+    for ln in text.splitlines():
+        s = ln.strip()
+        if any(s.startswith(p) for p in _NOISE_PREFIXES):
+            continue
+        if s.startswith("> ") and " · " in s:  # agent/model banner line
+            continue
+        lines.append(ln)
+    return "\n".join(lines).strip()
 
 
 class OpenCodeAgent(Agent):
@@ -34,14 +57,29 @@ class OpenCodeAgent(Agent):
         return "OpenCode"
 
     def run(self, prompt: str, cwd: Path) -> AgentResult:
-        # OpenCode non-interactive invocation.
-        # Uses --non-interactive and --prompt flags.
-        # If your version differs, adjust these flags accordingly.
-        cmd = [self._binary, "--non-interactive", "--prompt", prompt]
+        # sst/opencode (opencode.ai) non-interactive invocation: `opencode run
+        # <message>` executes the agent headlessly in CWD (running tools without
+        # prompting) and prints the assistant response to stdout. The model is
+        # given as provider/model; the provider is defined in
+        # ~/.config/opencode/opencode.json.
+        # Anchor opencode to the worktree explicitly. `opencode run` starts an
+        # internal server that otherwise re-discovers its own project directory,
+        # which can land outside the worktree (making every path "external" and
+        # auto-rejected in headless mode). Passing --dir is more reliable than
+        # depending on the process cwd alone.
+        cmd = [self._binary, "run", "--dir", str(cwd)]
         if self._model:
             cmd += ["--model", self._model]
+        cmd.append(prompt)
 
         env = os.environ.copy()
+        # Keep high-privilege forge credentials out of the agent's environment so
+        # a prompt-injection payload in untrusted issue/MR text can't read and
+        # exfiltrate them. The agent never needs these (git push is handled by the
+        # wrapper via GIT_ASKPASS in a separate subprocess env).
+        for secret_var in ("PLATFORM_TOKEN", "GITLAB_TOKEN", "GITHUB_TOKEN",
+                           "FORGEWRIGHT_GIT_TOKEN", "WEBHOOK_SECRET"):
+            env.pop(secret_var, None)
         env.setdefault("CI", "1")
 
         live_log = cwd / ".claude" / "claude-live.log"
@@ -94,4 +132,10 @@ class OpenCodeAgent(Agent):
         logging.info("AGENT [%s] exit=%s", self.name, proc.returncode)
 
         summary = read_summary(cwd)
+        if ok and not summary:
+            # opencode (esp. with smaller models) often answers directly in its
+            # stdout response instead of writing .claude/last-run-summary.md as
+            # the prompt asks. Fall back to the cleaned stdout so the user still
+            # gets the answer rather than "(no summary)".
+            summary = _clean_opencode_output(output)
         return AgentResult(ok=ok, output=output, summary=summary)

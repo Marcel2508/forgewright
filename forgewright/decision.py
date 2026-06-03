@@ -3,19 +3,34 @@
 from __future__ import annotations
 
 import hashlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
-from forgewright.helpers import has_mention
-from forgewright.types import Issue, MergeRequest, Note, Pipeline, Project
+from forgewright.helpers import has_mention, parse_ts
+from forgewright.types import Issue, MergeRequest, Note, Pipeline, Project, User
 
 if TYPE_CHECKING:
     from forgewright.platform.base import Platform
     from forgewright.config import Config
 
+# Predicate: may this user interact with the bot? (None = no restriction)
+Authorizer = Callable[["User | None"], bool]
+
+
+def _allowed(user: "User | None", is_authorized: "Authorizer | None") -> bool:
+    """True when no authz is configured, or the user clears the threshold."""
+    return is_authorized is None or is_authorized(user)
+
 
 def _desc_hash(text: str | None) -> str:
     """Short hash of description text for change detection."""
     return hashlib.sha256((text or "").encode()).hexdigest()[:16]
+
+
+def _newest_note(notes: list[Note]) -> Note | None:
+    """The chronologically newest note (tie-break by id), or None."""
+    if not notes:
+        return None
+    return max(notes, key=lambda n: (parse_ts(n.created_at), str(n.id)))
 
 
 def is_review_mode(mr: MergeRequest, bot_username: str,
@@ -38,7 +53,7 @@ def fingerprint_mr(mr: MergeRequest, notes: list[Note],
     human_notes = [n for n in notes
                    if not n.system
                    and n.author.username != bot_username]
-    last_note = human_notes[-1] if human_notes else None
+    last_note = _newest_note(human_notes)
     last_pipe = pipelines[0] if pipelines else None
     return {
         "description_hash": _desc_hash(mr.description),
@@ -56,7 +71,7 @@ def fingerprint_issue(issue: Issue, notes: list[Note],
     human_notes = [n for n in notes
                    if not n.system
                    and n.author.username != bot_username]
-    last_note = human_notes[-1] if human_notes else None
+    last_note = _newest_note(human_notes)
     return {
         "description_hash": _desc_hash(issue.description),
         "last_note_id": last_note.id if last_note else None,
@@ -67,12 +82,17 @@ def fingerprint_issue(issue: Issue, notes: list[Note],
 
 def should_process_issue(issue: Issue, notes: list[Note],
                          prev: dict | None,
-                         bot_username: str) -> tuple[bool, str]:
-    mention_in_desc = has_mention(issue.description, bot_username)
+                         bot_username: str,
+                         is_authorized: "Authorizer | None" = None
+                         ) -> tuple[bool, str]:
+    mention_in_desc = (
+        has_mention(issue.description, bot_username)
+        and _allowed(issue.author, is_authorized))
     mention_in_notes = any(
         has_mention(n.body, bot_username)
         and n.author.username != bot_username
         and not n.system
+        and _allowed(n.author, is_authorized)
         for n in notes
     )
     if not (mention_in_desc or mention_in_notes):
@@ -84,7 +104,8 @@ def should_process_issue(issue: Issue, notes: list[Note],
     if fp == prev_fp:
         return False, "no change since last run"
     reasons: list[str] = []
-    if fp["last_note_id"] != prev_fp.get("last_note_id"):
+    if (fp["last_note_id"] != prev_fp.get("last_note_id")
+            or fp["last_note_at"] != prev_fp.get("last_note_at")):
         reasons.append("new comment")
     if fp["labels"] != prev_fp.get("labels"):
         reasons.append("labels changed")
@@ -98,12 +119,17 @@ def should_process_issue(issue: Issue, notes: list[Note],
 def should_process_mr(mr: MergeRequest, notes: list[Note],
                       pipelines: list[Pipeline],
                       prev: dict | None, bot_username: str,
-                      branch_prefix: str) -> tuple[bool, str]:
+                      branch_prefix: str,
+                      is_authorized: "Authorizer | None" = None
+                      ) -> tuple[bool, str]:
     is_bot_branch = mr.source_branch.startswith(branch_prefix)
-    mention_in_desc = has_mention(mr.description, bot_username)
+    mention_in_desc = (
+        has_mention(mr.description, bot_username)
+        and _allowed(mr.author, is_authorized))
     non_bot_notes = [
         n for n in notes
         if not n.system and n.author.username != bot_username
+        and _allowed(n.author, is_authorized)
     ]
     mention_in_notes = any(
         has_mention(n.body, bot_username) for n in non_bot_notes)
@@ -129,7 +155,8 @@ def should_process_mr(mr: MergeRequest, notes: list[Note],
         return False, "no change since last run"
 
     reasons = []
-    if fp["last_note_id"] != prev_fp.get("last_note_id"):
+    if (fp["last_note_id"] != prev_fp.get("last_note_id")
+            or fp["last_note_at"] != prev_fp.get("last_note_at")):
         reasons.append("new comment")
     if fp["labels"] != prev_fp.get("labels"):
         reasons.append("labels changed")
@@ -165,18 +192,25 @@ def select_projects(platform: Platform, cfg: Config) -> list[Project]:
 
 
 def extract_user_instructions(mr: MergeRequest, notes: list[Note],
-                              bot_username: str) -> str:
-    """Extract the user's @<bot> instructions from the MR."""
+                              bot_username: str,
+                              is_authorized: "Authorizer | None" = None) -> str:
+    """Extract the user's @<bot> instructions from the MR.
+
+    When *is_authorized* is given, instructions from users below the role
+    threshold are skipped so they cannot steer the agent.
+    """
     instructions = []
 
     desc = mr.description or ""
-    if has_mention(desc, bot_username):
+    if has_mention(desc, bot_username) and _allowed(mr.author, is_authorized):
         instructions.append(f"From MR description:\n{desc}")
 
     for n in notes:
         if n.system:
             continue
         if n.author.username == bot_username:
+            continue
+        if not _allowed(n.author, is_authorized):
             continue
         body = n.body.strip()
         if has_mention(body, bot_username):

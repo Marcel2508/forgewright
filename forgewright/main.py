@@ -52,6 +52,12 @@ def main() -> int:
             logging.error("webhook_enabled is false in config — "
                           "set webhook_enabled: true to use --serve")
             return 1
+        if not cfg.webhook_secret:
+            logging.error(
+                "refusing to start webhook server without a secret — set "
+                "webhook_secret in config or the WEBHOOK_SECRET env var "
+                "(prevents anyone from triggering the bot)")
+            return 1
         run_server(cfg)
         return 0
 

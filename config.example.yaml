@@ -54,6 +54,19 @@ git_user_email: "forgewright@example.com"
 projects_include: []
 projects_exclude: []
 
+# Authorization: minimum role a user must have on the repo to interact with the
+# bot. Only mentions from users at or above this role trigger the bot, and
+# comments from users below it are stripped before any text reaches the AI agent
+# (this hinders prompt-injection by drive-by accounts). Resolved per user via
+# the platform API and cached per run; if a role can't be determined the user is
+# treated as unauthorized (fail closed).
+#   Accepted: read|guest, triage|reporter, write|developer|contributor,
+#             maintain|maintainer, admin|owner.  Set to "none" (or remove) to
+#             disable the check and let any user trigger the bot.
+# GitHub note: a fine-grained PAT needs the "Metadata" (and "Members"/admin
+#   read for org repos) permission to read collaborator roles.
+authorization_min_role: "write"
+
 # Platform type. Options: "gitlab", "github" (future: "forgejo")
 platform_type: "gitlab"
 
@@ -80,14 +93,17 @@ http_retries: 3
 # Set to true to allow `--serve` mode.
 webhook_enabled: false
 
-# Bind address and port for the webhook server.
+# Bind address and port for the webhook server. Can be overridden by the
+# WEBHOOK_HOST env var (the Docker image sets it to 0.0.0.0 so the published
+# port is reachable inside the container — put a reverse proxy in front).
 webhook_host: "127.0.0.1"
 webhook_port: 5000
 
 # Secret token for validating webhook requests. Must match the secret
 # configured on the platform (e.g. GitLab Settings → Webhooks).
-# Leave empty to skip validation (not recommended in production).
-# Can also be set via WEBHOOK_SECRET env var.
+# REQUIRED when webhook_enabled is true: `--serve` refuses to start without it,
+# and requests with no/invalid signature are rejected (fail closed).
+# Can also be set via the WEBHOOK_SECRET env var.
 webhook_secret: ""
 
 # Debounce delay (seconds) for webhook events. When multiple events arrive

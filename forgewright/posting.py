@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from forgewright.parsing import parse_review_comments, parse_summary_replies
+from forgewright.parsing import parse_sections, parse_summary_replies
 from forgewright.types import MRDetail
 
 if TYPE_CHECKING:
@@ -47,9 +47,10 @@ def post_review_comments(platform: Platform, pid: int | str,
                          prefix: str = "") -> None:
     """Parse review summary and post inline discussions, threaded replies,
     and a general comment."""
-    inlines, general_from_inlines = parse_review_comments(summary)
-    replies, general_from_replies = parse_summary_replies(summary)
-    general = general_from_inlines or general_from_replies
+    # Single-pass partition so inline/reply text is never also re-posted as a
+    # top-level comment (the previous two-parser approach double-posted inline
+    # comments when the summary had no explicit ## General section).
+    inlines, replies, general = parse_sections(summary)
 
     diff_refs = mr_detail.diff_refs
 

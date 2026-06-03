@@ -389,9 +389,12 @@ class TestGitLabWebhookValidation:
         plat = GitLabPlatform("https://git.example.com", "token")
         assert plat.validate_webhook({}, b"", "my-secret") is False
 
-    def test_empty_secret_allows_all(self):
+    def test_empty_secret_rejects(self):
+        # Fail closed: an unconfigured secret must not accept arbitrary callers.
         plat = GitLabPlatform("https://git.example.com", "token")
-        assert plat.validate_webhook({}, b"", "") is True
+        assert plat.validate_webhook({}, b"", "") is False
+        assert plat.validate_webhook(
+            {"X-Gitlab-Token": "anything"}, b"", "") is False
 
 
 class TestGitLabParseWebhookEvent:
@@ -935,9 +938,12 @@ class TestGitHubWebhookValidation:
         plat = GitHubPlatform("https://api.github.com", "ghp_test")
         assert plat.validate_webhook({}, b"body", "secret") is False
 
-    def test_empty_secret_allows_all(self):
+    def test_empty_secret_rejects(self):
+        # Fail closed: an unconfigured secret must not accept arbitrary callers.
         plat = GitHubPlatform("https://api.github.com", "ghp_test")
-        assert plat.validate_webhook({}, b"", "") is True
+        assert plat.validate_webhook({}, b"", "") is False
+        assert plat.validate_webhook(
+            {"X-Hub-Signature-256": "sha256=deadbeef"}, b"", "") is False
 
 
 class TestGitHubParseWebhookEvent:

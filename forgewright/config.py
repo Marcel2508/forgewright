@@ -43,6 +43,11 @@ class Config:
     git_user_email: str = "forgewright@example.com"
     projects_include: list[str] = field(default_factory=list)  # empty = all
     projects_exclude: list[str] = field(default_factory=list)
+    # Authorization: minimum role an actor must have on the repo to interact
+    # with the bot.  None / "none" disables the check (any user may trigger).
+    # Accepted: read|guest, triage|reporter, write|developer|contributor,
+    # maintain|maintainer, admin|owner.
+    authorization_min_role: str | None = None
     claude_timeout_sec: int = 60 * 60  # 1h per run
     request_timeout_sec: int = 30
     http_retries: int = 3
@@ -116,6 +121,7 @@ class Config:
             git_user_email=raw.get("git_user_email", "forgewright@example.com"),
             projects_include=raw.get("projects_include", []) or [],
             projects_exclude=raw.get("projects_exclude", []) or [],
+            authorization_min_role=raw.get("authorization_min_role"),
             claude_timeout_sec=int(raw.get("claude_timeout_sec", 3600)),
             request_timeout_sec=int(raw.get("request_timeout_sec", 30)),
             http_retries=int(raw.get("http_retries", 3)),
@@ -124,7 +130,9 @@ class Config:
             opencode_binary=raw.get("opencode_binary", "opencode"),
             opencode_model=raw.get("opencode_model"),
             webhook_enabled=bool(raw.get("webhook_enabled", False)),
-            webhook_host=raw.get("webhook_host", "127.0.0.1"),
+            webhook_host=(raw.get("webhook_host")
+                          or os.environ.get("WEBHOOK_HOST")
+                          or "127.0.0.1"),
             webhook_port=int(raw.get("webhook_port", 5000)),
             webhook_secret=raw.get("webhook_secret")
             or os.environ.get("WEBHOOK_SECRET", ""),

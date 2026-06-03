@@ -172,15 +172,18 @@ class TestWebhookAuth:
         )
         assert resp.status_code == 401
 
-    def test_no_secret_configured_allows_all(self, _mock_process,
-                                             client_no_secret):
+    def test_no_secret_configured_rejects(self, _mock_process,
+                                          client_no_secret):
+        # Fail closed: with no webhook_secret set, requests are rejected rather
+        # than blindly accepted (otherwise anyone could trigger the bot).
         resp = client_no_secret.post(
             "/webhook",
             data=json.dumps(_issue_payload()),
             content_type="application/json",
             headers={"X-Gitlab-Event": "Issue Hook"},
         )
-        assert resp.status_code == 202
+        assert resp.status_code == 401
+        _mock_process.assert_not_called()
 
 
 @patch("forgewright.webhook._process_event")
@@ -606,15 +609,17 @@ class TestGitHubWebhookAuth:
             headers={"X-GitHub-Event": "issues"})
         assert resp.status_code == 401
 
-    def test_no_secret_allows_all(self, _mock_process,
-                                  github_client_no_secret):
+    def test_no_secret_rejects(self, _mock_process,
+                               github_client_no_secret):
+        # Fail closed: with no webhook_secret set, requests are rejected.
         payload = _github_issue_payload()
         resp = github_client_no_secret.post(
             "/webhook",
             data=json.dumps(payload),
             content_type="application/json",
             headers={"X-GitHub-Event": "issues"})
-        assert resp.status_code == 202
+        assert resp.status_code == 401
+        _mock_process.assert_not_called()
 
 
 @patch("forgewright.webhook._process_event")

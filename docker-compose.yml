@@ -66,6 +66,10 @@ services:
     environment:
       <<: *claude-env
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      # Bind 0.0.0.0 INSIDE the container: Docker's published-port DNAT targets
+      # the container's eth0, so binding 127.0.0.1 here makes it unreachable.
+      # Host-side exposure is still controlled by WEBHOOK_BIND below.
+      WEBHOOK_HOST: ${WEBHOOK_HOST:-0.0.0.0}
     ports:
       - "${WEBHOOK_BIND:-127.0.0.1}:${WEBHOOK_PORT:-5000}:5000"
 
@@ -85,6 +89,8 @@ services:
     environment:
       <<: *opencode-env
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      # Bind 0.0.0.0 INSIDE the container (see webhook-claude for why).
+      WEBHOOK_HOST: ${WEBHOOK_HOST:-0.0.0.0}
     ports:
       - "${WEBHOOK_BIND:-127.0.0.1}:${WEBHOOK_PORT:-5000}:5000"
 

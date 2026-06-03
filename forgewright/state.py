@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,18 @@ class State:
         if path.exists():
             try:
                 self.data = json.loads(path.read_text())
-            except Exception:
+            except Exception as e:
+                # Don't silently drop all history (that would re-process every
+                # open issue/MR). Preserve the bad file for inspection and warn.
+                backup = path.parent / (path.name + ".corrupt")
+                logging.error(
+                    "state file %s is unreadable (%s); moving it to %s and "
+                    "starting fresh — open items may be re-evaluated once",
+                    path, e, backup)
+                try:
+                    path.replace(backup)
+                except Exception:
+                    pass
                 self.data = {}
 
     def proj(self, pid: int | str) -> dict:
