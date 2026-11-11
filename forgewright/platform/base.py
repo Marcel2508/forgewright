@@ -153,6 +153,15 @@ class Platform(ABC):
     def git_token(self) -> str:
         """The token used for git push/pull authentication via GIT_ASKPASS."""
 
+    @abstractmethod
+    def mr_head_ref(self, mr_number: int) -> str:
+        """Git ref (in the target repo) that points at the MR's head commit.
+
+        Works for fork MRs too, whose source branch is not in this repository
+        (GitLab: ``refs/merge-requests/<iid>/head``, GitHub:
+        ``refs/pull/<n>/head``).
+        """
+
     # -- URL construction ------------------------------------------------------
 
     @abstractmethod

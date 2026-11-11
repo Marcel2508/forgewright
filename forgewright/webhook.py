@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import TYPE_CHECKING
 
 from flask import Flask, Request, request, jsonify
@@ -19,38 +20,88 @@ if TYPE_CHECKING:
     from forgewright.config import Config
 
 
+# While another run holds the global lock (an agent run can take up to an
+# hour), keep ONE waiter per project instead of dropping the event: it retries
+# until the lock frees up. More events for that project in the meantime are
+# covered by the waiter, since process_project re-reads all current state.
+LOCK_RETRY_SEC = 30.0
+LOCK_MAX_WAIT_SEC = 3 * 3600.0
+_waiting: set = set()
+_waiting_lock = threading.Lock()
+
+
 def _process_event(cfg: Config, project_id: int | str,
-                   event_type: str) -> None:
+                   event_type: str, retry_sec: float | None = None,
+                   max_wait_sec: float | None = None) -> None:
     """Process a webhook event in a background thread."""
+    retry = LOCK_RETRY_SEC if retry_sec is None else retry_sec
+    max_wait = LOCK_MAX_WAIT_SEC if max_wait_sec is None else max_wait_sec
     lock_path = cfg.lock_dir / "poller.lock"
-    with file_lock(lock_path) as got:
-        if not got:
-            logging.info("webhook: poller lock busy, skipping event")
-            return
+    waited = 0.0
+    registered = False
+    try:
+        while True:
+            with file_lock(lock_path) as got:
+                if got:
+                    if registered:
+                        # Release the slot before working, so events arriving
+                        # during this run get their own waiter.
+                        with _waiting_lock:
+                            _waiting.discard(project_id)
+                        registered = False
+                    _process_event_locked(cfg, project_id, event_type)
+                    return
+            if not registered:
+                with _waiting_lock:
+                    if project_id in _waiting:
+                        logging.info(
+                            "webhook: lock busy, project %s already queued",
+                            project_id)
+                        return
+                    _waiting.add(project_id)
+                    registered = True
+                logging.info("webhook: lock busy, queueing project %s",
+                             project_id)
+            if waited >= max_wait:
+                logging.warning(
+                    "webhook: gave up waiting for the lock for project %s "
+                    "after %ds — the next poll will pick it up",
+                    project_id, int(waited))
+                return
+            time.sleep(retry)
+            waited += retry
+    finally:
+        if registered:
+            with _waiting_lock:
+                _waiting.discard(project_id)
 
-        platform = create_platform(cfg)
-        agent = create_agent(cfg)
-        state = State(cfg.state_file)
 
-        allowed = select_projects(platform, cfg)
-        allowed_ids = {p.id for p in allowed}
+def _process_event_locked(cfg: Config, project_id: int | str,
+                          event_type: str) -> None:
+    """Body of :func:`_process_event`; caller holds the global lock."""
+    platform = create_platform(cfg)
+    agent = create_agent(cfg)
+    state = State(cfg.state_file)
 
-        if project_id not in allowed_ids:
-            logging.info("webhook: project %s not in watched projects",
-                         project_id)
-            return
+    allowed = select_projects(platform, cfg)
+    allowed_ids = {p.id for p in allowed}
 
-        project = platform.project(project_id)
-        logging.info(
-            "webhook: processing %s (event=%s)",
-            project.path,
-            event_type,
-        )
-        try:
-            process_project(cfg, platform, agent, state, project)
-        except Exception as e:
-            logging.exception(
-                "webhook: project %s crashed: %s", project.path, e)
+    if project_id not in allowed_ids:
+        logging.info("webhook: project %s not in watched projects",
+                     project_id)
+        return
+
+    project = platform.project(project_id)
+    logging.info(
+        "webhook: processing %s (event=%s)",
+        project.path,
+        event_type,
+    )
+    try:
+        process_project(cfg, platform, agent, state, project)
+    except Exception as e:
+        logging.exception(
+            "webhook: project %s crashed: %s", project.path, e)
 
 
 class _DebounceManager:
@@ -163,6 +214,15 @@ def create_app(cfg: Config) -> Flask:
 
 def run_server(cfg: Config) -> None:
     """Start the webhook server (blocking)."""
+    # Same self-identification as the poller: if the token belongs to another
+    # user than bot_username, the bot's own comments would count as human
+    # activity and it would trigger itself.
+    from forgewright.main import sync_bot_username
+    try:
+        sync_bot_username(cfg, create_platform(cfg))
+    except Exception as e:
+        logging.error("webhook: cannot verify the bot user (%s) — using "
+                      "configured @%s", e, cfg.bot_username)
     app = create_app(cfg)
     logging.info(
         "webhook server starting on %s:%d", cfg.webhook_host, cfg.webhook_port

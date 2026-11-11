@@ -102,10 +102,11 @@ main(--serve) → create_app(cfg) → Flask server
 ### Decision logic
 
 `decision.py` controls when the bot acts:
-- `should_process_issue()`: requires `@<bot_username>` mention + fingerprint change since last run
-- `should_process_mr()`: requires bot involvement (`<branch_prefix>…` branch, mention, reviewer, assignee) + fingerprint change
-- `is_review_mode()`: True when MR author is not the bot AND branch doesn't start with `branch_prefix`
-- Fingerprints include: `updated_at`, `last_note_id` (human notes only), `labels`, `pipeline_sha`, `pipeline_status`, `head_sha`
+- `should_process_issue()`: first run on a `@<bot_username>` mention, afterwards only on a NEW mention comment (plain comments, labels, description edits don't re-run)
+- `should_process_mr()`: bot-owned MR → new human comment or newly failed pipeline (capped by `max_ci_fix_attempts`, counter `ci_fix_attempts` in state, reset by a human comment); review-mode MR → new mention, newly requested as reviewer/assignee, mention newly in description, or human reply in a bot thread
+- `is_review_mode()`: True for fork MRs, or when MR author is not the bot AND branch doesn't start with `branch_prefix`
+- Fingerprints include: `description_hash`, `last_note_id`/`last_note_at` (human notes only), `labels`, `pipeline_id`/`pipeline_sha`/`pipeline_status`, `head_sha`, `bot_requested`, `desc_mention`
+- Handlers save the fingerprint as soon as the agent has run (in a `finally`), so a crash while pushing/posting never re-runs the agent
 
 ### Summary parsing
 
@@ -199,10 +200,11 @@ Edit `decision.py`. The `should_process_issue()` and `should_process_mr()` funct
 
 ## Safety constraints
 
-- The bot never pushes to protected branches — only to `<branch_prefix>…` branches (default `forgewright/`)
+- Issue work is pushed only to `<branch_prefix>…` branches (default `forgewright/`). Review mode may push to a non-fork MR's source branch when the user asks for a change; never for fork MRs (detached checkout of the MR head ref) and never onto the target/default branch (`push_branch` refuses `branch == base_branch`)
 - MRs/PRs are always Draft
 - Per-branch lockfile prevents concurrent agent runs on the same worktree
 - Global poller lock prevents overlapping poll cycles
-- Agent timeout defaults to 1 hour
+- Agent timeout defaults to 1 hour; the agent runs in its own process group, which is killed on timeout and cleaned up after exit
+- `authorization_min_role` defaults to `write` when missing from the config
 - Git tokens use `GIT_ASKPASS` (never in git config or error messages)
 - Bot's own notes are excluded from fingerprints to prevent self-triggering loops

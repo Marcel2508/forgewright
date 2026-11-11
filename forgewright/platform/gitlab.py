@@ -119,6 +119,10 @@ def _parse_mr(data: dict) -> MergeRequest:
         reviewers=[_parse_user(r) for r in (data.get("reviewers") or [])],
         assignees=[_parse_user(a) for a in (data.get("assignees") or [])],
         diff_refs=_parse_diff_refs(data.get("diff_refs")),
+        is_fork=(data.get("source_project_id") is not None
+                 and data.get("target_project_id") is not None
+                 and data.get("source_project_id")
+                 != data.get("target_project_id")),
     )
 
 
@@ -385,6 +389,9 @@ class GitLabPlatform(Platform):
     @property
     def git_token(self) -> str:
         return self._token
+
+    def mr_head_ref(self, mr_number: int) -> str:
+        return f"refs/merge-requests/{mr_number}/head"
 
     # -- URL construction ------------------------------------------------------
 

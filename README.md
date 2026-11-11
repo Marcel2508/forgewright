@@ -97,9 +97,10 @@ the same git-worktree pipeline:
 - **Issue mention** — `@forgewright please add X` on an issue → agent works
   on a scratch branch, opens a **Draft MR/PR** with a full description, or
   replies inline if the user just asked a question.
-- **MR/PR update** — a new comment, label change, failing pipeline, or new
-  commit on a bot-authored MR/PR re-runs the agent; replies land as
-  **threaded discussions** instead of generic top-level comments.
+- **MR/PR update** — a new human comment or a failing pipeline on a
+  bot-authored MR/PR re-runs the agent; replies land as **threaded
+  discussions** instead of generic top-level comments. Automatic CI fixes are
+  capped at `max_ci_fix_attempts` (default 3) in a row.
 - **MR/PR review** — mention `@forgewright` on an MR/PR *not* authored by
   the bot and it will produce a thorough code review with **inline comments**
   on specific files and lines.
@@ -168,21 +169,22 @@ the bot reacts to `@jarvis` instead — nothing is hard-coded.
 
 To avoid runaway auto-coding the bot **only acts** when:
 
-- **Issue** — `@<bot_username>` appears in the description or a note (by
-  anyone other than the bot itself), *and* something changed since the last
-  run.
+- **Issue** — the first run needs `@<bot_username>` in the description or a
+  comment. After that, only a **new comment that mentions the bot** starts
+  another run; plain comments ("thanks!"), label changes (board moves) and
+  description edits do not.
 - **MR/PR (own)** — source branch starts with `branch_prefix` (default
-  `forgewright/`). First-seen MRs/PRs only trigger on real human activity;
-  later polls need an actual fingerprint delta.
-- **MR/PR (review)** — `@<bot_username>` appears in the description or notes
-  of an MR/PR *not* authored by the bot.
-- **MR/PR (assigned/reviewer)** — the bot has been added as reviewer or
-  assignee.
+  `forgewright/`). Re-runs on every new human comment and on a newly failed
+  pipeline (up to `max_ci_fix_attempts` in a row; a human comment resets the
+  counter). New commits, label changes and description edits do not trigger.
+- **MR/PR (review)** — an MR/PR *not* authored by the bot (fork MRs always
+  count as this). Runs on a new mention, when the bot is newly added as
+  reviewer/assignee, or on a human reply in a thread the bot is part of —
+  not on every push.
 
-The fingerprint is
-`(updated_at, last_note_id, labels, pipeline_sha, pipeline_status, head_sha)`,
-computed from **human notes only** — the bot's own replies are excluded to
-prevent self-triggering loops.
+Only users with at least `authorization_min_role` (default `write`) can
+trigger the bot; the bot's own notes never count, so it cannot trigger
+itself.
 
 ## Typical workflow
 
@@ -191,10 +193,12 @@ prevent self-triggering loops.
    runs the agent, pushes a `forgewright/issue-42-…` branch, and opens a
    Draft MR/PR titled `Draft: <title> (#42)` that closes the issue and
    explains what it changed, why, and how to test.
-3. You review the diff and leave comments — including inline comments on
-   specific lines. The next poll/event re-runs the agent with that feedback
-   and posts replies directly in the discussion threads. If code changes
-   were requested, it pushes new commits.
+3. You review the diff and leave comments on the MR/PR — including inline
+   comments on specific lines. The next poll/event re-runs the agent with
+   that feedback and posts replies directly in the discussion threads. If
+   code changes were requested, it pushes new commits. (Every comment on the
+   bot's MR counts as feedback, so approve with the button rather than an
+   "LGTM" comment.)
 4. If you just asked a question, the bot answers inline without making
    unnecessary code changes.
 5. Mention `@forgewright` on any MR/PR for a code review.
@@ -204,8 +208,11 @@ prevent self-triggering loops.
 ## Safety
 
 - Draft MRs/PRs only — nothing can auto-merge.
-- Branches are `forgewright/…`-prefixed; the bot never pushes to protected
-  branches. Add branch protection for extra defence.
+- Issue work happens on `forgewright/…` branches. In review mode the bot
+  may push to the MR's source branch, but only when a user explicitly asks
+  for a change — never to the target/default branch and never for fork MRs
+  (those get a detached, read-only checkout). Add branch protection for
+  extra defence.
 - Per-branch lockfile prevents two agents on the same worktree.
 - Global poller lockfile prevents overlapping poll cycles.
 - Every agent run is capped at `claude_timeout_sec` (default 1 h) — applies

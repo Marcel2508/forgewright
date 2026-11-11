@@ -109,6 +109,9 @@ class MockPlatform(Platform):
                            branch: str) -> MergeRequest | None:
         return None
 
+    def mr_head_ref(self, mr_number: int) -> str:
+        return f"refs/merge-requests/{mr_number}/head"
+
     def create_mr(self, project_id: ProjectID, **kwargs) -> MergeRequest:
         self._record("create_mr", project_id, **kwargs)
         return MergeRequest(

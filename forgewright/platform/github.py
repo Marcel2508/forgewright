@@ -74,6 +74,20 @@ _GH_ROLE_LEVELS = {
 }
 
 
+def _is_fork_pr(head: dict, base: dict) -> bool:
+    """True when the PR's head lives in another repository (a fork).
+
+    A deleted fork shows up as ``head.repo == None`` — still not ours.
+    """
+    if "repo" not in head:
+        return False  # minimal payloads (tests, partial API objects)
+    head_repo = (head.get("repo") or {}).get("full_name")
+    base_repo = ((base.get("repo") or {}).get("full_name"))
+    if not head_repo:
+        return True
+    return bool(base_repo) and head_repo != base_repo
+
+
 def _parse_pr(data: dict) -> MergeRequest:
     head = data.get("head") or {}
     base = data.get("base") or {}
@@ -97,6 +111,7 @@ def _parse_pr(data: dict) -> MergeRequest:
         reviewers=[_parse_user(r) for r in (data.get("requested_reviewers") or [])],
         assignees=[_parse_user(a) for a in (data.get("assignees") or [])],
         diff_refs=diff_refs,
+        is_fork=_is_fork_pr(head, base),
     )
 
 
@@ -525,6 +540,9 @@ class GitHubPlatform(Platform):
     @property
     def git_token(self) -> str:
         return self._token
+
+    def mr_head_ref(self, mr_number: int) -> str:
+        return f"refs/pull/{mr_number}/head"
 
     # -- URL construction ------------------------------------------------------
 

@@ -61,8 +61,9 @@ projects_exclude: []
 # the platform API and cached per run; if a role can't be determined the user is
 # treated as unauthorized (fail closed).
 #   Accepted: read|guest, triage|reporter, write|developer|contributor,
-#             maintain|maintainer, admin|owner.  Set to "none" (or remove) to
-#             disable the check and let any user trigger the bot.
+#             maintain|maintainer, admin|owner.  Defaults to "write" when the key
+#             is missing. Set to "none" to disable the check and let any
+#             user trigger the bot.
 # GitHub note: a fine-grained PAT needs the "Metadata" (and "Members"/admin
 #   read for org repos) permission to read collaborator roles.
 authorization_min_role: "write"
@@ -75,6 +76,11 @@ agent_type: "claude"
 
 # Hard cap per agent run so a broken agent cannot burn through credits.
 claude_timeout_sec: 3600
+
+# When a pipeline on one of the bot's own MRs fails, the bot tries to fix it.
+# After this many automatic attempts in a row it stops and waits for a human
+# comment on the MR (which also resets the counter).
+max_ci_fix_attempts: 3
 
 # OpenCode settings (only used when agent_type is "opencode")
 opencode_binary: "opencode"

@@ -8,7 +8,12 @@ import subprocess
 import threading
 from pathlib import Path
 
-from forgewright.agent.base import Agent, AgentResult
+from forgewright.agent.base import (
+    Agent,
+    AgentResult,
+    kill_process_group,
+    reap_leftovers,
+)
 from forgewright.parsing import read_summary
 
 
@@ -53,15 +58,12 @@ class ClaudeCodeAgent(Agent):
                 proc = subprocess.Popen(
                     cmd, cwd=cwd, env=env,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True)
+                    text=True, start_new_session=True)
                 timed_out = threading.Event()
 
                 def _kill_on_timeout():
                     timed_out.set()
-                    try:
-                        proc.kill()
-                    except OSError:
-                        pass
+                    kill_process_group(proc)
 
                 timer = threading.Timer(self._timeout, _kill_on_timeout)
                 timer.start()
@@ -74,6 +76,7 @@ class ClaudeCodeAgent(Agent):
                     proc.wait()
                 finally:
                     timer.cancel()
+                    reap_leftovers(proc)
 
                 if timed_out.is_set():
                     output = "".join(chunks)

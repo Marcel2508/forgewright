@@ -167,20 +167,28 @@ main(--serve) → webhook.create_app(cfg) → Flask server listening on :5000
 Centralised in `forgewright/decision.py`. All return `(bool, reason)` so the
 log line explains *why* something did or didn't trigger.
 
-- `should_process_issue()` — requires `@<bot_username>` mention **and**
-  fingerprint change since last run.
-- `should_process_mr()` — requires bot involvement (bot-authored
-  `<branch_prefix>…` branch, mention, assigned reviewer, or explicit assignee)
-  **and** a fingerprint change.
-- `is_review_mode()` — true when the MR author is not the bot and the branch
-  does not start with `branch_prefix`.
+- `should_process_issue()` — first run on a `@<bot_username>` mention; after
+  that only on a **new** mention comment (newer than the newest human note
+  recorded at the last run). Plain comments, labels and description edits
+  do not re-run the agent.
+- `should_process_mr()` — bot-owned MRs (`<branch_prefix>…`, not a fork):
+  new human comment, or a newly failed pipeline (`ci_fix_trigger`, capped by
+  `max_ci_fix_attempts`; the counter lives next to the fingerprint as
+  `ci_fix_attempts` and resets on a human comment). Review-mode MRs: new
+  mention, bot newly requested as reviewer/assignee, mention newly added to
+  the description, or a human reply in a thread the bot takes part in.
+- `is_review_mode()` — true for fork MRs, and when the MR author is not the
+  bot and the branch does not start with `branch_prefix`.
 
 ### Fingerprinting
 
-An issue/MR fingerprint is `(updated_at, last_note_id, labels, pipeline_sha,
-pipeline_status, head_sha)`. Only **human notes** count toward
-`last_note_id` — the bot's own replies are excluded to prevent self-triggering
-loops.
+Issue fingerprint: `description_hash, last_note_id, last_note_at, labels`.
+MR fingerprint additionally has `pipeline_id, pipeline_sha, pipeline_status,
+head_sha, bot_requested, desc_mention`. Only **human notes** count toward
+`last_note_*` — the bot's own replies are excluded to prevent self-triggering
+loops. The fingerprint is stored as soon as the agent has run, even if
+pushing or posting fails afterwards, so a crash cannot cause repeated agent
+runs.
 
 ## Summary parsing
 
@@ -196,8 +204,11 @@ Parsing lives in `parsing.py`; posting lives in `posting.py`.
 
 ## Safety constraints
 
-- The bot never pushes to protected branches — only to branches under
-  `branch_prefix` (default `forgewright/`) that it creates itself.
+- Issue work is pushed only to `branch_prefix` branches (default
+  `forgewright/`). Review mode may push to the MR's source branch when a
+  user asks for a change, but never for fork MRs (detached read-only
+  checkout of `refs/merge-requests/<iid>/head` / `refs/pull/<n>/head`) and
+  never onto the target/default branch.
 - All bot-created MRs/PRs are Draft.
 - A per-branch lockfile prevents two concurrent agent runs on the same
   worktree.

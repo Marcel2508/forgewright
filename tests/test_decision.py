@@ -161,24 +161,52 @@ class TestShouldProcessIssue:
         assert not go
         assert "no change" in reason
 
-    def test_new_comment_triggers(self):
+    def test_plain_comment_does_not_retrigger(self):
+        # "thanks!" after the bot already ran must not start another run.
         issue = make_issue(description="@forgewright fix")
-        notes = [make_note(note_id=5, author="alice")]
+        notes = [make_note(note_id=5, author="alice", body="thanks!")]
+        fp = fingerprint_issue(issue, [], "forgewright")
+        prev = {"fingerprint": fp}
+        go, reason = should_process_issue(issue, notes, prev, "forgewright")
+        assert not go
+        assert "without a new mention" in reason
+
+    def test_new_mention_comment_triggers(self):
+        issue = make_issue(description="@forgewright fix")
+        notes = [make_note(note_id=5, author="alice",
+                           body="@forgewright also handle X")]
         fp = fingerprint_issue(issue, [], "forgewright")
         prev = {"fingerprint": fp}
         go, reason = should_process_issue(issue, notes, prev, "forgewright")
         assert go
-        assert "new comment" in reason
+        assert "new mention" in reason
 
-    def test_description_edit_triggers(self):
+    def test_old_mention_plus_new_plain_comment_skips(self):
+        old = make_note(note_id=1, author="alice", body="@forgewright do it",
+                        created_at="2024-01-01T00:00:00Z")
+        issue = make_issue(description="please fix")
+        prev = {"fingerprint": fingerprint_issue(issue, [old], "forgewright")}
+        new = make_note(note_id=2, author="alice", body="looks good",
+                        created_at="2024-01-02T00:00:00Z")
+        go, _ = should_process_issue(issue, [old, new], prev, "forgewright")
+        assert not go
+
+    def test_label_change_does_not_retrigger(self):
+        # e.g. moving the card on an issue board
+        issue = make_issue(description="@forgewright fix", labels=["doing"])
+        prev = {"fingerprint": fingerprint_issue(
+            make_issue(description="@forgewright fix"), [], "forgewright")}
+        go, _ = should_process_issue(issue, [], prev, "forgewright")
+        assert not go
+
+    def test_description_edit_does_not_retrigger(self):
         issue = make_issue(description="@forgewright fix v2")
         notes = [make_note(note_id=1, author="alice")]
         fp = fingerprint_issue(
             make_issue(description="@forgewright fix v1"), notes, "forgewright")
         prev = {"fingerprint": fp}
-        go, reason = should_process_issue(issue, notes, prev, "forgewright")
-        assert go
-        assert "description edited" in reason
+        go, _ = should_process_issue(issue, notes, prev, "forgewright")
+        assert not go
 
     def test_no_meaningful_change_skips(self):
         issue = make_issue(description="@forgewright fix")
@@ -314,7 +342,7 @@ class TestShouldProcessMR:
             mr, notes, pipes, prev, "forgewright", "forgewright/")
         assert not go
 
-    def test_label_change_triggers(self):
+    def test_label_change_does_not_trigger(self):
         mr = make_mr(source_branch="forgewright/issue-1", author="forgewright",
                      labels=["new-label"])
         notes = [make_note(note_id=1, author="alice")]
@@ -328,10 +356,10 @@ class TestShouldProcessMR:
             "pipeline_status": None,
             "head_sha": "abc123",
         }}
-        go, reason = should_process_mr(
+        go, _ = should_process_mr(
             mr, notes, pipes, prev, "forgewright", "forgewright/")
-        assert go
-        assert "labels changed" in reason
+        # Label changes (e.g. board moves) no longer start an agent run.
+        assert not go
 
 
 class TestSelectProjects:

@@ -78,6 +78,9 @@ class MergeRequest:
     reviewers: list[User] = field(default_factory=list)
     assignees: list[User] = field(default_factory=list)
     diff_refs: DiffRefs | None = None
+    # True when the source branch lives in a fork, not in this repository.
+    # ``source_branch`` then names a branch of the fork, not of the mirror.
+    is_fork: bool = False
 
 
 @dataclass

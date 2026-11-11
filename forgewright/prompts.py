@@ -35,12 +35,15 @@ If this branch already has commits (i.e. it existed before this run), other
 merge requests may have been merged into `{base_branch}` in the meantime.
 Before making any changes:
 
-1. Run `git fetch origin` to get the latest remote state.
-2. Check if `{base_branch}` has moved ahead:
-   `git merge-base HEAD origin/{base_branch}` vs `git rev-parse origin/{base_branch}`
-3. If the base branch has new commits, rebase onto it:
-   `git rebase origin/{base_branch}`
-4. Resolve any conflicts carefully. If a conflict is too complex to resolve
+The wrapper has already fetched the latest remote state right before this
+run: the local branch `{base_branch}` IS the current remote state (this
+checkout has no `origin/*` refs and no push/fetch credentials, so do not run
+`git fetch`, `git pull` or `git push`).
+
+1. Check if `{base_branch}` has moved ahead:
+   `git merge-base HEAD {base_branch}` vs `git rev-parse {base_branch}`
+2. If they differ, rebase onto it: `git rebase {base_branch}`
+3. Resolve any conflicts carefully. If a conflict is too complex to resolve
    confidently, note it in your summary.
 
 If this is a brand-new branch (no prior commits), you can skip this step.
@@ -165,13 +168,16 @@ Other merge requests may have been merged into `{base_branch}` since this
 branch was last updated. Before making any changes, check whether your branch
 can be cleanly merged:
 
-1. Run `git fetch origin` to get the latest remote state.
-2. Run `git merge-base HEAD origin/{base_branch}` and
-   `git rev-parse origin/{base_branch}` — if they differ, the base branch
-   has moved ahead.
-3. If the base branch has new commits, rebase onto it:
-   `git rebase origin/{base_branch}`
-4. If the rebase produces conflicts, resolve them carefully. Make sure the
+The wrapper has already fetched the latest remote state right before this
+run: the local branch `{base_branch}` IS the current remote state (this
+checkout has no `origin/*` refs and no push/fetch credentials, so do not run
+`git fetch`, `git pull` or `git push`).
+
+1. Run `git merge-base HEAD {base_branch}` and `git rev-parse {base_branch}`
+   — if they differ, the base branch has moved ahead.
+2. If the base branch has new commits, rebase onto it:
+   `git rebase {base_branch}`
+3. If the rebase produces conflicts, resolve them carefully. Make sure the
    final result compiles/passes tests. If a conflict is too complex to
    resolve confidently, note it in your summary so the reviewer can help.
 
@@ -351,8 +357,12 @@ Your overall review summary. Include:
 ## Code changes
 If you are about to make code changes on this branch, first check for merge
 conflicts with the target branch:
-1. Run `git fetch origin` and check if `{target_branch}` has moved ahead.
-2. If so, rebase: `git rebase origin/{target_branch}` and resolve any conflicts.
+1. The wrapper has already fetched the latest remote state: the local branch
+   `{target_branch}` IS the current remote state (there are no `origin/*`
+   refs; do not run `git fetch`, `git pull` or `git push`). Check whether it
+   has moved ahead: `git merge-base HEAD {target_branch}` vs
+   `git rev-parse {target_branch}`.
+2. If so, rebase: `git rebase {target_branch}` and resolve any conflicts.
 
 If the user explicitly asks you to make a change, fix something, or apply a
 suggestion (e.g. "can you change it?", "fix this", "please update X"), you

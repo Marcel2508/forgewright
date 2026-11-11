@@ -29,6 +29,20 @@ def setup_logging(path: Path, verbose: bool) -> None:
     )
 
 
+def sync_bot_username(cfg: Config, platform) -> None:
+    """Align ``cfg.bot_username`` with the token's real user (raises on
+    auth failure)."""
+    me = platform.current_user()
+    logging.info("authenticated as @%s (expected @%s)",
+                 me.username, cfg.bot_username)
+    if me.username != cfg.bot_username:
+        logging.warning(
+            "token belongs to @%s, not configured @%s \u2014 "
+            "using @%s for self-filtering",
+            me.username, cfg.bot_username, me.username)
+        cfg.bot_username = me.username
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="forgewright \u2014 code forge bot-mention dispatcher")
@@ -72,15 +86,7 @@ def main() -> int:
         agent = create_agent(cfg)
 
         try:
-            me = platform.current_user()
-            logging.info("authenticated as @%s (expected @%s)",
-                         me.username, cfg.bot_username)
-            if me.username != cfg.bot_username:
-                logging.warning(
-                    "token belongs to @%s, not configured @%s \u2014 "
-                    "using @%s for self-filtering",
-                    me.username, cfg.bot_username, me.username)
-                cfg.bot_username = me.username
+            sync_bot_username(cfg, platform)
         except Exception as e:
             logging.error("cannot auth to platform: %s", e)
             return 2

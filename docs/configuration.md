@@ -53,6 +53,7 @@ Every key with its default and a short description. See
 | `platform_url` | — (required) | GitLab base URL, or `https://api.github.com` for GitHub. `gitlab_url` is still accepted as a fallback. |
 | `platform_token` | — (env fallback) | API token; env var `PLATFORM_TOKEN` / `GITLAB_TOKEN` wins if set. |
 | `bot_username` | `"forgewright"` | Username of the bot account. **Also defines the mention trigger**: the bot reacts to `@<bot_username>` in issues and MRs (so `bot_username: jarvis` ⇒ tag with `@jarvis`). Used to detect the bot's own comments and filter them out of fingerprints. At startup the token owner's username is compared against this value; if they differ, the token owner wins and a warning is logged. |
+| `authorization_min_role` | `"write"` | Minimum role on the repo needed to trigger the bot (`read`/`guest`, `triage`/`reporter`, `write`/`developer`, `maintain`/`maintainer`, `admin`/`owner`). Comments from users below it are also hidden from the agent. `"none"` disables the check. |
 | `request_timeout_sec` | `30` | Timeout per platform API request. |
 | `http_retries` | `3` | Retries on 5xx and timeouts. |
 
@@ -64,6 +65,7 @@ Every key with its default and a short description. See
 | `claude_binary` | `"claude"` | Path to the `claude` CLI (only used when `agent_type: "claude"`). |
 | `claude_model` | `null` | Optional model override, e.g. `"claude-opus-4-6"`, `"claude-sonnet-4-6"`, `"claude-haiku-4-5-20251001"`. `null` uses the CLI default. |
 | `claude_timeout_sec` | `3600` | Hard cap per agent run (applies to both Claude Code and OpenCode). |
+| `max_ci_fix_attempts` | `3` | Consecutive automatic fix runs for a failing pipeline on a bot MR before the bot waits for a human comment. |
 | `opencode_binary` | `"opencode"` | Path to the `opencode` CLI (only used when `agent_type: "opencode"`). |
 | `opencode_model` | `null` | Optional OpenCode model override. |
 

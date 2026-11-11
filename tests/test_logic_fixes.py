@@ -265,10 +265,11 @@ class TestConfigNewFields:
         c = Config.load(self._base(tmp_path, "authorization_min_role: write\n"))
         assert c.authorization_min_role == "write"
 
-    def test_authorization_default_none(self, tmp_path):
+    def test_authorization_defaults_to_write(self, tmp_path):
+        # Secure default: a config without the key must not let anyone in.
         from forgewright.config import Config
         c = Config.load(self._base(tmp_path))
-        assert c.authorization_min_role is None
+        assert c.authorization_min_role == "write"
 
     def test_webhook_host_env_override(self, tmp_path, monkeypatch):
         from forgewright.config import Config

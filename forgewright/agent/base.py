@@ -2,9 +2,53 @@
 
 from __future__ import annotations
 
+import os
+import signal
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+
+
+def _pgid(proc) -> int | None:
+    """The agent's process-group id, or None if unknown. Only real pids > 1
+    count, so a bogus value can never signal init's group (or our own)."""
+    pid = getattr(proc, "pid", None)
+    if type(pid) is not int or pid <= 1 or pid == os.getpgrp():
+        return None
+    return pid
+
+
+def kill_process_group(proc, sig: int = signal.SIGKILL) -> None:
+    """Signal the agent and everything it spawned (test runners, dev
+    servers, ...). The agent is started with ``start_new_session=True``, so
+    its pid is also its process-group id. Falls back to killing just the
+    process where process groups are unavailable."""
+    pgid = _pgid(proc)
+    if pgid is not None:
+        try:
+            os.killpg(pgid, sig)
+            return
+        except ProcessLookupError:
+            return  # whole group already gone
+        except OSError:
+            pass
+    if sig == signal.SIGKILL:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
+def reap_leftovers(proc) -> None:
+    """After a normal agent exit, terminate background processes it left
+    running in its process group (they would outlive the deleted worktree)."""
+    pgid = _pgid(proc)
+    if pgid is None:
+        return
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except OSError:
+        pass
 
 
 @dataclass

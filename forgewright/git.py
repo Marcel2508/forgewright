@@ -52,7 +52,14 @@ def clone_or_update_mirror(cfg: Config, platform: Platform,
 
 
 def make_worktree(cfg: Config, mirror: Path, project_id: int | str,
-                  branch: str, base_branch: str) -> Path:
+                  branch: str, base_branch: str,
+                  detach_ref: str | None = None) -> Path:
+    """Create a fresh worktree for *branch*.
+
+    With *detach_ref* (e.g. ``refs/merge-requests/7/head`` for a fork MR) the
+    worktree is a detached checkout of that ref instead: nothing is created
+    under ``refs/heads`` and *branch* only names the worktree directory.
+    """
     wt_root = cfg.workdir / "worktrees" / str(project_id)
     wt_root.mkdir(parents=True, exist_ok=True)
     wt_path = wt_root / slugify(branch, 80)
@@ -63,12 +70,18 @@ def make_worktree(cfg: Config, mirror: Path, project_id: int | str,
         if wt_path.exists():
             shutil.rmtree(wt_path, ignore_errors=True)
 
-    remote_has = run(
-        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
-        cwd=mirror, check=False
-    ).returncode == 0
-
-    if remote_has:
+    if detach_ref:
+        has_ref = run(
+            ["git", "show-ref", "--verify", "--quiet", detach_ref],
+            cwd=mirror, check=False).returncode == 0
+        if not has_ref:
+            raise RuntimeError(
+                f"ref {detach_ref} not found in mirror {mirror} — cannot "
+                f"check out the MR head")
+        run(["git", "worktree", "add", "--detach", str(wt_path), detach_ref],
+            cwd=mirror)
+    elif run(["git", "show-ref", "--verify", "--quiet",
+              f"refs/heads/{branch}"], cwd=mirror, check=False).returncode == 0:
         run(["git", "worktree", "add", str(wt_path), branch], cwd=mirror)
     else:
         run(["git", "worktree", "add", "-b", branch,
@@ -92,6 +105,12 @@ def cleanup_worktree(mirror: Path, wt_path: Path) -> None:
 def push_branch(cfg: Config, platform: Platform, wt_path: Path, branch: str,
                 base_branch: str = "main") -> str:
     """Return the pushed commit SHA if anything was pushed, empty string otherwise."""
+    if not branch or branch == base_branch:
+        # Never push onto the base branch itself (e.g. an MR whose source and
+        # target are the same name, or a misparsed fork MR).
+        logging.warning("refusing to push to %r (same as base branch %r)",
+                        branch, base_branch)
+        return ""
     git_env = cfg.git_auth_env(platform.git_token)
     local = run(["git", "rev-parse", "HEAD"],
                 cwd=wt_path, capture=True).stdout.strip()

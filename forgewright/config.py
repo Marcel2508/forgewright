@@ -49,6 +49,9 @@ class Config:
     # maintain|maintainer, admin|owner.
     authorization_min_role: str | None = None
     claude_timeout_sec: int = 60 * 60  # 1h per run
+    # How many times in a row the bot may try to fix a failing pipeline on its
+    # own MR before it stops and waits for a human comment.
+    max_ci_fix_attempts: int = 3
     request_timeout_sec: int = 30
     http_retries: int = 3
     # Platform/agent selection
@@ -121,8 +124,11 @@ class Config:
             git_user_email=raw.get("git_user_email", "forgewright@example.com"),
             projects_include=raw.get("projects_include", []) or [],
             projects_exclude=raw.get("projects_exclude", []) or [],
-            authorization_min_role=raw.get("authorization_min_role"),
+            # Secure default: only users with write/developer access may
+            # trigger the bot. Set "none" explicitly to allow anyone.
+            authorization_min_role=raw.get("authorization_min_role", "write"),
             claude_timeout_sec=int(raw.get("claude_timeout_sec", 3600)),
+            max_ci_fix_attempts=int(raw.get("max_ci_fix_attempts", 3)),
             request_timeout_sec=int(raw.get("request_timeout_sec", 30)),
             http_retries=int(raw.get("http_retries", 3)),
             platform_type=raw.get("platform_type", "gitlab"),
