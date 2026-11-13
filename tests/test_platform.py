@@ -10,7 +10,7 @@ import requests
 from forgewright.platform import create_platform
 from forgewright.platform.github import GitHubPlatform
 from forgewright.platform.gitlab import GitLabPlatform
-from forgewright.types import DiffRefs, Project
+from forgewright.types import DiffRefs, Project, User
 
 
 class TestCreatePlatform:
@@ -1233,3 +1233,17 @@ class TestGitHubListMemberProjects:
             assert projects[0].id == "owner/repo1"
             assert projects[0].path == "owner/repo1"
             assert projects[1].default_branch == "develop"
+
+
+class TestGitLabAccessLevelPath:
+    """user_access_level() must URL-encode a namespaced project path, like
+    project() does (GitLab returns 404 for an unencoded path)."""
+
+    def test_encodes_path(self):
+        plat = GitLabPlatform("https://git.example.com", "t")
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"access_level": 20}
+        with patch.object(plat, "_req", return_value=resp) as req:
+            assert plat.user_access_level("g/sub/lib",
+                                          User(username="a", id=5)) == 20
+        assert req.call_args[0][1] == "/projects/g%2Fsub%2Flib/members/all/5"

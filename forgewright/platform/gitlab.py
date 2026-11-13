@@ -215,7 +215,8 @@ class GitLabPlatform(Platform):
         member = None
         if user.id is not None:
             r = self._req(
-                "GET", f"/projects/{project_id}/members/all/{user.id}",
+                "GET", f"/projects/{quote(str(project_id), safe='%')}"
+                       f"/members/all/{user.id}",
                 params={})
             if r.status_code == 404:
                 return 0
@@ -223,7 +224,8 @@ class GitLabPlatform(Platform):
             member = r.json()
         elif user.username:
             r = self._req(
-                "GET", f"/projects/{project_id}/members/all",
+                "GET", f"/projects/{quote(str(project_id), safe='%')}"
+                       f"/members/all",
                 params={"query": user.username})
             r.raise_for_status()
             for m in r.json():
