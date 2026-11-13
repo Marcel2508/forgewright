@@ -54,6 +54,7 @@ git_user_email: "forgewright@example.com"
 projects_include: []
 projects_exclude: []
 
+
 # Authorization: minimum role a user must have on the repo to interact with the
 # bot. Only mentions from users at or above this role trigger the bot, and
 # comments from users below it are stripped before any text reaches the AI agent
@@ -71,7 +72,9 @@ authorization_min_role: "write"
 # Platform type. Options: "gitlab", "github" (future: "forgejo")
 platform_type: "gitlab"
 
-# AI agent to use. Options: "claude" (Claude Code), "opencode" (OpenCode).
+# AI agent to use. Options: "claude" (Claude Code), "hermes" (Hermes Agent by
+# Nous Research — any OpenAI-compatible model, bring your own key),
+# "opencode" (OpenCode — deprecated, use "hermes" instead).
 agent_type: "claude"
 
 # Hard cap per agent run so a broken agent cannot burn through credits.
@@ -82,7 +85,46 @@ claude_timeout_sec: 3600
 # comment on the MR (which also resets the counter).
 max_ci_fix_attempts: 3
 
-# OpenCode settings (only used when agent_type is "opencode")
+# Hermes Agent settings (only used when agent_type is "hermes").
+# With hermes_base_url set, forgewright runs Hermes against that
+# OpenAI-compatible endpoint (LiteLLM, vLLM, OpenRouter, a local server ...)
+# through a Hermes profile it manages itself (hermes_profile, default
+# "forgewright"; by default no persistent memory or self-learning between
+# runs — see hermes_learning). Without it, your existing Hermes setup is used
+# unchanged.
+hermes_binary: "hermes"
+hermes_base_url: null            # e.g. "https://llm.example.com/v1"
+hermes_model: null               # model id at that endpoint; required with base_url
+# API key for the endpoint. Prefer the HERMES_API_KEY env var over putting it
+# here. Leave empty for local servers that need no key. Hermes profiles read
+# keys only from their own .env, so it is written to
+# ~/.hermes/profiles/<profile>/.env (mode 0600) — never on the command line.
+hermes_api_key: null
+# none | minimal | low | medium | high | xhigh | max  (null = Hermes default)
+hermes_reasoning_effort: null
+# Total context window in tokens (input + output). null = auto-detect from the
+# endpoint; set it when auto-detection is wrong (common with local servers).
+# Hermes needs at least 64000 for agent use.
+hermes_context_length: null
+# Max tool-calling iterations per run (null = Hermes default).
+hermes_max_turns: null
+# Hermes profile. Managed mode: the profile forgewright owns and rewrites
+# (default "forgewright" — don't point it at a profile you use yourself).
+# Without hermes_base_url: an existing profile of yours to run as-is.
+hermes_profile: null
+# Let Hermes learn about each codebase across runs: persistent memory, skills
+# it writes for itself and a post-run self-review. Each watched project gets
+# its own profile (<hermes_profile>-<project>-<hash>), so nothing learned in
+# one repo leaks into another. Off by default because anything that reaches
+# the prompt (issue text, diffs, CI logs) can then influence later runs —
+# keep authorization_min_role strict when enabling it. Docker: the hermes
+# compose services keep these profiles in the hermes-profiles volume.
+# Reset a project's memory by deleting ~/.hermes/profiles/<that profile>.
+hermes_learning: false
+
+# OpenCode settings (only used when agent_type is "opencode").
+# DEPRECATED: OpenCode support stays for now but gets no new features; prefer
+# agent_type "hermes".
 opencode_binary: "opencode"
 opencode_model: null
 

@@ -3,13 +3,13 @@
 **A self-hosted, platform- and agent-agnostic coding bot.** Mention
 `@forgewright` on a GitLab issue or a GitHub pull request, and the bot opens a
 Draft MR/PR with working code, answers questions inline, or posts a full code
-review with line-level comments. Runs either Claude Code or OpenCode under
-the hood, against either GitLab or GitHub — pick your combination in one
-line of YAML.
+review with line-level comments. Runs Claude Code or Hermes Agent (with any
+OpenAI-compatible model, bring your own key) under the hood, against either
+GitLab or GitHub — pick your combination in one line of YAML.
 
 ```yaml
 platform_type: "github"     # or "gitlab"
-agent_type:    "claude"     # or "opencode"
+agent_type:    "claude"     # or "hermes" (or the deprecated "opencode")
 bot_username:  "forgewright"
 ```
 
@@ -46,9 +46,9 @@ implement `Platform` in `forgewright/platform/<name>.py`, register it in
 
 ---
 
-## Multi-agent: Claude Code or OpenCode, same prompt pipeline
+## Multi-agent: Claude Code or Hermes Agent, same prompt pipeline
 
-The agent is equally pluggable. Both implementations live behind a one-method
+The agent is equally pluggable. All implementations live behind a one-method
 interface (`forgewright/agent/base.py`):
 
 ```python
@@ -56,14 +56,21 @@ class Agent:
     def run(self, prompt: str, cwd: Path) -> AgentResult: ...
 ```
 
-|                                 | **Claude Code** | **OpenCode** |
-|---------------------------------|:---:|:---:|
-| Local CLI dispatch              | `claude -p …` | `opencode --non-interactive --prompt …` |
-| Works in a dedicated worktree   | ✅ | ✅ |
-| Honours `claude_timeout_sec`    | ✅ | ✅ |
-| Writes `.forgewright/last-run-summary.md` | ✅ | ✅ |
-| Model override via config       | `claude_model` | `opencode_model` |
-| Auth                            | `claude login` (Max OAuth) or `ANTHROPIC_API_KEY` | whatever provider key OpenCode needs |
+|                                 | **Claude Code** | **Hermes Agent** | **OpenCode** (deprecated) |
+|---------------------------------|:---:|:---:|:---:|
+| Local CLI dispatch              | `claude -p` (prompt on stdin) | `hermes chat --oneshot --format stream-json` | `opencode run …` |
+| Works in a dedicated worktree   | ✅ | ✅ | ✅ |
+| Honours `claude_timeout_sec`    | ✅ | ✅ | ✅ |
+| Writes `.forgewright/last-run-summary.md` | ✅ | ✅ | ✅ |
+| Very large prompts (> 128 KiB)  | ✅ | ✅ | ❌ (fails cleanly) |
+| Model override via config       | `claude_model` | `hermes_model` | `opencode_model` |
+| Custom endpoint / BYOK          | — | `hermes_base_url` + `HERMES_API_KEY` | own config |
+| Reasoning effort / context size | — | `hermes_reasoning_effort`, `hermes_context_length` | — |
+| Auth                            | `claude login` (Max OAuth) or `ANTHROPIC_API_KEY` | key for your endpoint (or none for local servers) | whatever provider key OpenCode needs |
+
+> **OpenCode is deprecated.** It keeps working, but new features go to Hermes
+> Agent, which covers the same "any model" use case with a cleaner headless
+> mode. Switch with `agent_type: "hermes"`.
 
 Same prompts, same structured summary format, same posting logic. The agent
 just runs in a sandboxed worktree and writes its output — forgewright reads
@@ -77,11 +84,27 @@ agent_type: "claude"
 claude_binary: "/usr/local/bin/claude"
 claude_model: "claude-sonnet-4-6"    # optional
 
-# OpenCode
+# Hermes Agent against your own OpenAI-compatible endpoint (BYOK)
+agent_type: "hermes"
+hermes_base_url: "https://llm.example.com/v1"   # LiteLLM, vLLM, OpenRouter, …
+hermes_model: "qwen3-coder"
+hermes_reasoning_effort: "high"       # optional: none … xhigh / max
+hermes_context_length: 131072         # optional: when auto-detection is wrong
+# key: HERMES_API_KEY env var (or hermes_api_key)
+
+# OpenCode (deprecated)
 agent_type: "opencode"
 opencode_binary: "/usr/local/bin/opencode"
 opencode_model: null                  # optional
 ```
+
+With `hermes_base_url` set, forgewright runs Hermes through a profile it
+manages itself (`hermes -p forgewright`): the endpoint, model and tuning come
+from forgewright's config. By default Hermes' persistent memory and
+self-learning are switched off there, so text from one issue cannot plant
+instructions that steer later runs. Set `hermes_learning: true` to let Hermes
+learn about each codebase over time instead — every project then gets its own
+profile, so nothing learned in one repo leaks into another.
 
 Adding a third agent (Aider, a custom local model, a hosted endpoint) is
 again a single-file task: implement `Agent`, register it in the factory,
@@ -114,9 +137,6 @@ the same git-worktree pipeline:
   wrote in.
 - **Configurable mention** — `bot_username: jarvis` ⇒ reacts to `@jarvis`
   instead. The name `forgewright` is just the default.
-- **Hardened defaults** — Draft MRs/PRs only, `forgewright/…` branch prefix,
-  per-branch locks, agent timeout, tokens never in git config, hardened
-  systemd units.
 
 ---
 
@@ -136,12 +156,12 @@ sudo -u forgewright /opt/forgewright/venv/bin/python -m forgewright --dry-run -v
 Docker install (all-in-container — no host systemd or cron):
 
 ```bash
-bash install.docker.sh --profile claude     # or --profile opencode
+bash install.docker.sh --profile claude     # or --profile hermes
 # then edit /opt/forgewright/config.yaml and /opt/forgewright/.env
 ```
 
 The installer pulls the prebuilt image from GHCR
-(`ghcr.io/marcel2508/forgewright-{claude,opencode}:latest`) and brings up
+(`ghcr.io/marcel2508/forgewright-{claude,hermes,opencode}:latest`) and brings up
 two long-running containers per profile — a webhook receiver and a poller
 with supercronic inside it.
 
@@ -216,7 +236,7 @@ itself.
 - Per-branch lockfile prevents two agents on the same worktree.
 - Global poller lockfile prevents overlapping poll cycles.
 - Every agent run is capped at `claude_timeout_sec` (default 1 h) — applies
-  to both Claude Code and OpenCode.
+  to every agent.
 - Tokens are passed via `GIT_ASKPASS` — never in git config or error
   messages.
 - Bot-authored notes are excluded from fingerprints, so the bot cannot
@@ -227,8 +247,8 @@ itself.
 `claude --dangerously-skip-permissions` is acceptable here because the agent
 runs in a throwaway worktree owned by a dedicated system user inside the
 target host. It can touch the repo files the worktree contains; it cannot
-reach files outside its workdir. The same isolation applies when running
-OpenCode.
+reach files outside its workdir. The same isolation applies to Hermes
+(`--yolo`) and OpenCode.
 
 ## License
 

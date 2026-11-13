@@ -2,7 +2,7 @@
 
 forgewright is a small Python service that connects three moving parts: a
 **code hosting platform** (GitLab or GitHub), an **AI coding agent** (Claude
-Code or OpenCode), and the **git repository** being worked on. It reacts to
+Code, Hermes Agent or the deprecated OpenCode), and the **git repository** being worked on. It reacts to
 `@<bot_username>` mentions on issues and merge/pull requests and dispatches
 the agent to produce code, answer questions, or review diffs. The mention
 string is configurable — `bot_username: forgewright` triggers on
@@ -27,7 +27,7 @@ string is configurable — `bot_username: forgewright` triggers on
                              ┌─────────────┐
                              │  AI agent   │
                              │ (Claude /   │
-                             │  OpenCode)  │
+                             │  Hermes)    │
                              └─────────────┘
 ```
 
@@ -71,7 +71,8 @@ forgewright/
     __init__.py              # create_agent() factory
     base.py                  # Agent ABC + AgentResult dataclass
     claude_code.py           # Wraps the `claude` CLI
-    opencode.py              # Wraps the `opencode` CLI
+    hermes.py                # Wraps the `hermes` CLI (Hermes Agent)
+    opencode.py              # Wraps the `opencode` CLI (deprecated)
 forgewright.py               # Thin entry-point shim (delegates to package)
 ```
 
@@ -97,8 +98,17 @@ Single method: `run(prompt, cwd) -> AgentResult`. `AgentResult` is
 `(ok: bool, output: str, summary: str)`.
 
 Implementations:
-- `ClaudeCodeAgent` — invokes `claude -p ... --dangerously-skip-permissions`
-- `OpenCodeAgent` — invokes `opencode --non-interactive --prompt ...`
+- `ClaudeCodeAgent` — invokes `claude -p --dangerously-skip-permissions`
+  with the prompt on stdin
+- `HermesAgent` — invokes `hermes [-p <profile>] chat --oneshot --yolo
+  --format stream-json --query-file <tmp>`; in BYOK mode it maintains the
+  `<profile>` (endpoint, model, reasoning effort, context length) itself
+- `OpenCodeAgent` (deprecated) — invokes `opencode run --dir <wt> <prompt>`
+
+Prompts never go on the command line above 128 KiB (Linux' per-argument
+limit): Claude reads stdin, Hermes a temp file; OpenCode, which only takes an
+argument, reports a clean failure instead. All agents run in their own
+process group and never see the forge token (`FORGE_SECRET_ENV_VARS`).
 
 To add a new agent, implement the ABC in `forgewright/agent/<name>.py` and
 register it in `forgewright/agent/__init__.py:create_agent()`.

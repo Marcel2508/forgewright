@@ -576,6 +576,11 @@ def process_project(cfg: Config, platform: Platform, agent: Agent,
     logging.info("PROJECT %s (since %s)", project.path,
                  shortdt(last_checked))
 
+    # Per-project agent state (e.g. Hermes' learning profile) keys off this.
+    set_scope = getattr(agent, "set_scope", None)
+    if callable(set_scope):
+        set_scope(project.path)
+
     authorized = make_authorizer(platform, project, cfg)
     if authorized is not None:
         logging.info("PROJECT %s: authorization enabled (min role %s)",

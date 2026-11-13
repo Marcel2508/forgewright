@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "forgewright"
 version = "2.0.0"
-description = "Polling and webhook agent that dispatches AI coding agents (Claude Code, OpenCode) to @forgewright mentions on GitLab and GitHub."
+description = "Polling and webhook agent that dispatches AI coding agents (Claude Code, Hermes Agent, OpenCode) to @forgewright mentions on GitLab and GitHub."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
     { name = "Marcel Aust", email = "mail@marcel-aust.de" },
 ]
-keywords = ["gitlab", "github", "claude", "opencode", "ai", "bot", "automation", "code-review"]
+keywords = ["gitlab", "github", "claude", "hermes", "opencode", "ai", "bot", "automation", "code-review"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",

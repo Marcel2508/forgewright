@@ -8,7 +8,8 @@ There are three things to decide before installing:
 
 1. **Install method** — native (systemd + venv) or Docker.
 2. **Platform** — GitLab or GitHub.
-3. **Agent** — Claude Code or OpenCode.
+3. **Agent** — Claude Code or Hermes Agent (OpenCode still works but is
+   deprecated).
 
 ## Prerequisites
 
@@ -94,21 +95,27 @@ involved** — if Docker is up, forgewright is up.
 
 ### Images
 
-Two prebuilt images are published to GHCR for `linux/amd64` and
+Three prebuilt images are published to GHCR for `linux/amd64` and
 `linux/arm64`, one per agent:
 
 - **`ghcr.io/marcel2508/forgewright-claude:latest`** — Python 3.12 slim +
   Node 22 + `@anthropic-ai/claude-code` + supercronic. Used by the `claude`
   compose profile.
+- **`ghcr.io/marcel2508/forgewright-hermes:latest`** — Python 3.12 slim +
+  Hermes Agent (official installer, stable channel, without browser and
+  computer-use tooling) + supercronic. Used by the `hermes` compose profile.
+  Set `HERMES_API_KEY` in `.env` and the `hermes_*` keys in `config.yaml`.
 - **`ghcr.io/marcel2508/forgewright-opencode:latest`** — Python 3.12 slim +
   opencode (via the official installer) + supercronic. Used by the
-  `opencode` compose profile.
+  `opencode` compose profile. **Deprecated.**
 
-The corresponding `Dockerfile.claude` and `Dockerfile.opencode` in the repo
+The corresponding `Dockerfile.claude`, `Dockerfile.hermes` and
+`Dockerfile.opencode` in the repo
 are what the [GitHub Actions workflow](https://github.com/Marcel2508/forgewright/blob/main/.github/workflows/docker.yml)
 builds and publishes on every push to `main` and on semver tags.
 
-Pick an agent at install time with `--profile claude` or `--profile opencode`.
+Pick an agent at install time with `--profile claude`, `--profile hermes`
+or `--profile opencode`.
 Switching later just needs a pull of the other image:
 
 ```bash
@@ -190,7 +197,33 @@ claude login                    # interactive Claude Max OAuth, or
 which claude                    # verify and put the path in config.yaml
 ```
 
-### OpenCode
+### Hermes Agent
+
+```bash
+sudo -iu forgewright
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh \
+  | bash -s -- --non-interactive --skip-browser --skip-computer-use
+~/.local/bin/hermes --version   # put this path into hermes_binary
+```
+
+Then set in `config.yaml`:
+
+```yaml
+agent_type: "hermes"
+hermes_binary: "/home/forgewright/.local/bin/hermes"   # wherever it landed
+hermes_base_url: "https://llm.example.com/v1"
+hermes_model: "your-model-id"
+hermes_reasoning_effort: "high"    # optional
+hermes_context_length: 131072      # optional
+```
+
+and the key as `HERMES_API_KEY` in the systemd drop-in (next to
+`PLATFORM_TOKEN`). forgewright creates and maintains the `forgewright` Hermes
+profile itself; nothing else to configure in Hermes. Note that Hermes always
+asks for approval before editing agent-instruction files such as `CLAUDE.md`
+or `AGENTS.md` — in headless runs those edits are refused.
+
+### OpenCode (deprecated)
 
 ```bash
 sudo -iu forgewright

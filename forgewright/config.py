@@ -59,6 +59,17 @@ class Config:
     agent_type: str = "claude"  # "claude" | "opencode"
     opencode_binary: str = "opencode"
     opencode_model: str | None = None
+    # Hermes Agent (agent_type: "hermes"). Setting hermes_base_url switches to
+    # BYOK mode: forgewright manages a dedicated Hermes profile.
+    hermes_binary: str = "hermes"
+    hermes_model: str | None = None
+    hermes_base_url: str | None = None
+    hermes_api_key: str | None = None
+    hermes_reasoning_effort: str | None = None
+    hermes_context_length: int | None = None
+    hermes_max_turns: int | None = None
+    hermes_profile: str | None = None
+    hermes_learning: bool = False
     # Webhook server
     webhook_enabled: bool = False
     webhook_host: str = "127.0.0.1"
@@ -75,6 +86,22 @@ class Config:
     def gitlab_token(self) -> str:
         """Backward-compatible alias for platform_token."""
         return self.platform_token
+
+    def hermes_settings(self):
+        """Hermes agent settings derived from this config."""
+        from forgewright.agent.hermes import HermesSettings
+        return HermesSettings(
+            binary=self.hermes_binary,
+            model=self.hermes_model,
+            base_url=self.hermes_base_url,
+            api_key=self.hermes_api_key,
+            reasoning_effort=self.hermes_reasoning_effort,
+            context_length=self.hermes_context_length,
+            max_turns=self.hermes_max_turns,
+            profile=self.hermes_profile,
+            timeout_sec=self.claude_timeout_sec,
+            learning=self.hermes_learning,
+        )
 
     @classmethod
     def load(cls, path: str) -> Config:
@@ -135,6 +162,7 @@ class Config:
             agent_type=raw.get("agent_type", "claude"),
             opencode_binary=raw.get("opencode_binary", "opencode"),
             opencode_model=raw.get("opencode_model"),
+            **_hermes_fields(raw),
             webhook_enabled=bool(raw.get("webhook_enabled", False)),
             webhook_host=(raw.get("webhook_host")
                           or os.environ.get("WEBHOOK_HOST")
@@ -168,3 +196,68 @@ class Config:
         env["GIT_ASKPASS"] = str(askpass)
         env["GIT_TERMINAL_PROMPT"] = "0"
         return env
+
+
+def _optional_int(raw: dict, key: str) -> int | None:
+    val = raw.get(key)
+    if val in (None, ""):
+        return None
+    try:
+        n = int(val)
+    except (TypeError, ValueError):
+        raise SystemExit(f"{key} must be an integer, got {val!r}")
+    if n <= 0:
+        raise SystemExit(f"{key} must be positive, got {n}")
+    return n
+
+
+def _hermes_fields(raw: dict) -> dict:
+    """Parse and validate the hermes_* config keys."""
+    from forgewright.agent.hermes import REASONING_EFFORTS, valid_profile_name
+
+    base_url = (raw.get("hermes_base_url")
+                or os.environ.get("HERMES_BASE_URL") or None)
+    model = raw.get("hermes_model") or None
+    effort = raw.get("hermes_reasoning_effort")
+    if effort is not None:
+        effort = str(effort).strip().lower() or None
+    if effort and effort not in REASONING_EFFORTS:
+        raise SystemExit(
+            f"hermes_reasoning_effort must be one of "
+            f"{', '.join(REASONING_EFFORTS)} — got {effort!r}")
+    if base_url and not model:
+        raise SystemExit(
+            "hermes_base_url is set but hermes_model is missing — a custom "
+            "endpoint needs an explicit model name")
+    if base_url and not str(base_url).startswith(("http://", "https://")):
+        raise SystemExit(
+            f"hermes_base_url must start with http:// or https:// — got "
+            f"{base_url!r}")
+    profile = raw.get("hermes_profile") or None
+    if profile is not None:
+        profile = str(profile).strip()
+        if not valid_profile_name(profile):
+            raise SystemExit(
+                f"hermes_profile must be lowercase letters, digits, - or _ "
+                f"— got {profile!r}")
+    learning = raw.get("hermes_learning", False)
+    if not isinstance(learning, bool):
+        raise SystemExit(
+            f"hermes_learning must be true or false — got {learning!r}")
+    if learning and not base_url:
+        raise SystemExit(
+            "hermes_learning only applies to the managed profile (set "
+            "hermes_base_url); with your own Hermes setup, configure memory "
+            "in that profile instead")
+    return {
+        "hermes_binary": raw.get("hermes_binary", "hermes"),
+        "hermes_model": model,
+        "hermes_base_url": str(base_url).rstrip("/") if base_url else None,
+        "hermes_api_key": (raw.get("hermes_api_key")
+                           or os.environ.get("HERMES_API_KEY") or None),
+        "hermes_reasoning_effort": effort,
+        "hermes_context_length": _optional_int(raw, "hermes_context_length"),
+        "hermes_max_turns": _optional_int(raw, "hermes_max_turns"),
+        "hermes_profile": profile,
+        "hermes_learning": learning,
+    }

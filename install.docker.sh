@@ -5,10 +5,10 @@
 # supercronic inside the poller container.
 #
 # Uses the prebuilt images published to GHCR
-# (ghcr.io/marcel2508/forgewright-{claude,opencode}:latest).
+# (ghcr.io/marcel2508/forgewright-{claude,hermes,opencode}:latest).
 #
 # Usage:
-#   bash install.docker.sh [--profile claude|opencode] [--dir /opt/forgewright]
+#   bash install.docker.sh [--profile claude|hermes|opencode] [--dir /opt/forgewright]
 #
 # Defaults to --profile claude and --dir /opt/forgewright.
 set -euo pipefail
@@ -26,10 +26,14 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$PROFILE" != "claude" ] && [ "$PROFILE" != "opencode" ]; then
-  echo "error: --profile must be 'claude' or 'opencode'" >&2
-  exit 2
-fi
+case "$PROFILE" in
+  claude|hermes) ;;
+  opencode)
+    echo "warning: the opencode profile is deprecated — consider --profile hermes" >&2 ;;
+  *)
+    echo "error: --profile must be 'claude', 'hermes' or 'opencode'" >&2
+    exit 2 ;;
+esac
 
 # --- Pre-flight checks -------------------------------------------------------
 

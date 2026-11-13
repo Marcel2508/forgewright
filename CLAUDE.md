@@ -2,7 +2,7 @@
 
 ## Project overview
 
-forgewright is a polling + webhook agent that monitors a GitLab or GitHub instance for `@forgewright` mentions (or whatever `bot_username` is configured) in issues and merge/pull requests, then dispatches an AI coding agent (Claude Code or OpenCode) to implement fixes, answer questions, or review code. It is designed to run as a systemd timer (every 5 min by default) and/or a long-lived webhook service, either natively or in Docker, against any self-hosted or cloud GitLab / GitHub instance.
+forgewright is a polling + webhook agent that monitors a GitLab or GitHub instance for `@forgewright` mentions (or whatever `bot_username` is configured) in issues and merge/pull requests, then dispatches an AI coding agent (Claude Code, Hermes Agent, or the deprecated OpenCode) to implement fixes, answer questions, or review code. It is designed to run as a systemd timer (every 5 min by default) and/or a long-lived webhook service, either natively or in Docker, against any self-hosted or cloud GitLab / GitHub instance.
 
 ## Commit conventions
 
@@ -53,7 +53,8 @@ forgewright/                 # Python package
     __init__.py              # create_agent() factory
     base.py                  # Agent ABC + AgentResult dataclass
     claude_code.py           # ClaudeCodeAgent — wraps `claude` CLI
-    opencode.py              # OpenCodeAgent — wraps `opencode` CLI
+    hermes.py                # HermesAgent — wraps `hermes` CLI (Hermes Agent, BYOK)
+    opencode.py              # OpenCodeAgent — wraps `opencode` CLI (deprecated)
 forgewright.py               # Thin entry-point shim (delegates to package)
 ```
 
@@ -61,9 +62,9 @@ forgewright.py               # Thin entry-point shim (delegates to package)
 
 **Platform** (`forgewright/platform/base.py`): Abstract base class defining 22 methods for interacting with a code hosting platform (list projects, issues, MRs, post comments, create discussions, etc.). Implementations: `GitLabPlatform` (GitLab v4 API) and `GitHubPlatform` (GitHub REST API v3). To add a new platform: implement the ABC in `platform/<name>.py` and add a case in `platform/__init__.py:create_platform()`.
 
-**Agent** (`forgewright/agent/base.py`): Abstract base class with a single `run(prompt, cwd) -> AgentResult` method and a `name` property. `AgentResult` is a dataclass with `ok: bool`, `output: str`, `summary: str`. Implementations: `ClaudeCodeAgent` (runs `claude -p ... --dangerously-skip-permissions`) and `OpenCodeAgent` (runs `opencode --non-interactive --prompt ...`). To add a new agent: implement the ABC and add a case in `agent/__init__.py:create_agent()`.
+**Agent** (`forgewright/agent/base.py`): Abstract base class with a single `run(prompt, cwd) -> AgentResult` method and a `name` property. `AgentResult` is a dataclass with `ok: bool`, `output: str`, `summary: str`. Implementations: `ClaudeCodeAgent` (runs `claude -p --dangerously-skip-permissions`, prompt on stdin), `HermesAgent` (runs `hermes [-p <profile>] chat --oneshot --yolo --format stream-json --query-file <tmp>`; with `hermes_base_url` set it maintains the managed profile `~/.hermes/profiles/<profile>/` — config.yaml + 0600 `.env` with the key, memory/self-learning off unless `hermes_learning: true`, which switches to one profile per project via `Agent.set_scope()` called from `process_project`) and the deprecated `OpenCodeAgent` (runs `opencode run --dir <wt> <prompt>`). Never pass a prompt as one argv string above 128 KiB (`MAX_ARG_BYTES`, Linux E2BIG); strip `FORGE_SECRET_ENV_VARS` from the agent env; start it with `start_new_session=True`. To add a new agent: implement the ABC and add a case in `agent/__init__.py:create_agent()`.
 
-**Config** (`forgewright/config.py`): Dataclass loaded from YAML. Key fields: `platform_type` ("gitlab" or "github"), `agent_type` ("claude" or "opencode"), plus all platform/agent/git settings. Webhook fields: `webhook_enabled`, `webhook_host`, `webhook_port`, `webhook_secret`. Secrets fall back to env vars (`PLATFORM_TOKEN` / `GITLAB_TOKEN`, `ANTHROPIC_API_KEY`, `WEBHOOK_SECRET`).
+**Config** (`forgewright/config.py`): Dataclass loaded from YAML. Key fields: `platform_type` ("gitlab" or "github"), `agent_type` ("claude", "hermes" or "opencode"), plus all platform/agent/git settings (Hermes: `hermes_base_url`, `hermes_model`, `hermes_api_key`, `hermes_reasoning_effort`, `hermes_context_length`, `hermes_max_turns`, `hermes_profile`, `hermes_learning`, validated in `_hermes_fields`). Webhook fields: `webhook_enabled`, `webhook_host`, `webhook_port`, `webhook_secret`. Secrets fall back to env vars (`PLATFORM_TOKEN` / `GITLAB_TOKEN`, `ANTHROPIC_API_KEY`, `HERMES_API_KEY`, `WEBHOOK_SECRET`).
 
 **Webhook** (`forgewright/webhook.py`): Flask HTTP server that receives GitLab/GitHub webhook events (Issue Hook, Note Hook, Merge Request Hook, Pipeline Hook — or their GitHub equivalents). Validates the platform-specific signature, dispatches `process_project()` in a background thread. Uses the same file locking and state management as the poller, so both can coexist safely.
 
@@ -166,7 +167,7 @@ Two deployment modes:
 
 **Native (systemd):** `install.sh` creates a `forgewright` system user, copies the package to `/opt/forgewright/`, creates a venv, installs systemd timer + webhook service. Config at `/etc/forgewright/config.yaml`, state at `/var/lib/forgewright/`, logs at `/var/log/forgewright/`.
 
-**Docker:** `install.docker.sh --profile claude|opencode` copies `docker-compose.yml` to `/opt/forgewright`, pulls the prebuilt agent-specific image from GHCR (`ghcr.io/marcel2508/forgewright-claude:latest` or `…-opencode:latest`), and brings up two long-running containers per profile — `poller-<profile>` (runs [supercronic](https://github.com/aptible/supercronic) in-container, firing `python -m forgewright` on `POLL_SCHEDULE`) and `webhook-<profile>` (Flask server). No host systemd or cron is involved. Config bind-mounted from `/opt/forgewright/config.yaml`; secrets and host-path overrides come from `/opt/forgewright/.env`; state in named volumes. The `Dockerfile.claude` / `Dockerfile.opencode` in the repo are what the GHCR workflow (`.github/workflows/docker.yml`) builds for `linux/amd64` + `linux/arm64` on every push to `main` and on semver tags.
+**Docker:** `install.docker.sh --profile claude|hermes|opencode` copies `docker-compose.yml` to `/opt/forgewright`, pulls the prebuilt agent-specific image from GHCR (`ghcr.io/marcel2508/forgewright-claude:latest`, `…-hermes:latest` or `…-opencode:latest`), and brings up two long-running containers per profile — `poller-<profile>` (runs [supercronic](https://github.com/aptible/supercronic) in-container, firing `python -m forgewright` on `POLL_SCHEDULE`) and `webhook-<profile>` (Flask server). No host systemd or cron is involved. Config bind-mounted from `/opt/forgewright/config.yaml`; secrets and host-path overrides come from `/opt/forgewright/.env`; state in named volumes. The `Dockerfile.claude` / `Dockerfile.hermes` / `Dockerfile.opencode` in the repo are what the GHCR workflow (`.github/workflows/docker.yml`) builds for `linux/amd64` + `linux/arm64` on every push to `main` and on semver tags.
 
 Native polling uses a 5-minute systemd timer (one-shot). Docker polling uses supercronic inside the `poller-<profile>` container with the same 5-minute default (tune via `POLL_SCHEDULE` in `.env`). The webhook is always-on in both deployments. All instances share file locks and state to avoid conflicts.
 
@@ -194,6 +195,7 @@ Native polling uses a 5-minute systemd timer (one-shot). Docker polling uses sup
 2. Add factory case in `agent/__init__.py:create_agent()`
 3. Add any new config fields to `Config` in `config.py`
 4. Add config defaults to `Config.load()` and `config.example.yaml`
+5. Add `Dockerfile.<agent>`, the `poller-/webhook-<agent>` compose services, the CI matrix entry and the `install.docker.sh` profile
 
 ### Modifying prompt templates
 

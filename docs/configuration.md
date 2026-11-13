@@ -22,6 +22,7 @@ out of disk files:
 | Platform API token | `PLATFORM_TOKEN` (or legacy `GITLAB_TOKEN`) | `platform_token` | GitLab/GitHub API + git push |
 | Webhook shared secret | `WEBHOOK_SECRET` | `webhook_secret` | Validates incoming webhook requests |
 | Agent provider key | `ANTHROPIC_API_KEY` (Claude Code) or OpenCode's provider key | (not in config) | Only if the agent CLI is not already logged in |
+| Hermes endpoint key | `HERMES_API_KEY` | `hermes_api_key` | Key for `hermes_base_url` (BYOK). Written only to the managed profile's `.env` (0600) |
 
 For native installs the recommended pattern is a systemd drop-in:
 
@@ -61,13 +62,47 @@ Every key with its default and a short description. See
 
 | Key | Default | Description |
 |---|---|---|
-| `agent_type` | `"claude"` | `"claude"` (Claude Code) or `"opencode"` (OpenCode). |
+| `agent_type` | `"claude"` | `"claude"` (Claude Code), `"hermes"` (Hermes Agent) or `"opencode"` (OpenCode, **deprecated**). |
 | `claude_binary` | `"claude"` | Path to the `claude` CLI (only used when `agent_type: "claude"`). |
 | `claude_model` | `null` | Optional model override, e.g. `"claude-opus-4-6"`, `"claude-sonnet-4-6"`, `"claude-haiku-4-5-20251001"`. `null` uses the CLI default. |
-| `claude_timeout_sec` | `3600` | Hard cap per agent run (applies to both Claude Code and OpenCode). |
+| `claude_timeout_sec` | `3600` | Hard cap per agent run (applies to every agent). |
 | `max_ci_fix_attempts` | `3` | Consecutive automatic fix runs for a failing pipeline on a bot MR before the bot waits for a human comment. |
-| `opencode_binary` | `"opencode"` | Path to the `opencode` CLI (only used when `agent_type: "opencode"`). |
+| `hermes_binary` | `"hermes"` | Path to the `hermes` CLI (only used when `agent_type: "hermes"`). |
+| `hermes_base_url` | `null` | OpenAI-compatible endpoint (e.g. `https://llm.example.com/v1`). Setting it switches to **managed BYOK mode** (see below). Env fallback `HERMES_BASE_URL`. |
+| `hermes_model` | `null` | Model id at that endpoint. Required with `hermes_base_url`; otherwise an optional override. |
+| `hermes_api_key` | `null` | Endpoint key; prefer the `HERMES_API_KEY` env var. Leave empty for local servers without auth. |
+| `hermes_reasoning_effort` | `null` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. `null` = Hermes default. Passed through to the endpoint as `reasoning_effort`. |
+| `hermes_context_length` | `null` | Total context window (input + output) in tokens. `null` = auto-detect; set it when detection is wrong (common with local servers). Hermes needs ≥ 64000. |
+| `hermes_max_turns` | `null` | Max tool-calling iterations per run. `null` = Hermes default. |
+| `hermes_profile` | `null` | Managed mode: name of the profile forgewright owns (default `forgewright`). Unmanaged: an existing profile of yours to use as-is. |
+| `hermes_learning` | `false` | Managed mode only. `true` lets Hermes keep persistent memory, write skills and self-review after runs — in a separate profile **per project** (`<profile>-<project>-<hash>`). See the security note below. |
+| `opencode_binary` | `"opencode"` | Path to the `opencode` CLI (only used when `agent_type: "opencode"`). **Deprecated** — prefer Hermes. |
 | `opencode_model` | `null` | Optional OpenCode model override. |
+
+#### Hermes: managed (BYOK) vs. unmanaged
+
+- **Managed** (`hermes_base_url` set): before every run forgewright writes
+  `~/.hermes/profiles/<hermes_profile>/config.yaml` (provider `custom`,
+  endpoint, model, `context_length`, `agent.reasoning_effort`,
+  `agent.max_turns`) and a `.env` with the key (mode 0600 — Hermes profiles
+  read keys only from their own `.env`). It runs `hermes -p <profile> chat
+  --oneshot --yolo --format stream-json`. By default persistent memory, user
+  profile and background self-improvement are off in that profile, so one
+  issue's text cannot plant instructions for later runs. Don't point
+  `hermes_profile` at a profile you use yourself — it gets overwritten.
+- **Learning** (`hermes_learning: true`, managed mode only): memory, skill
+  creation and the post-run self-review are on, and each watched project runs
+  in its own profile `<hermes_profile>-<project-slug>-<hash>` — what Hermes
+  learns about one codebase never reaches another. The "user profile" stays
+  off (the bot serves many people). **Trade-off:** everything that reaches the
+  prompt — issue and MR text, diffs, CI logs — can now leave traces that steer
+  later runs of that project. Keep `authorization_min_role` at `write` or
+  stricter, and reset a project by deleting its profile directory
+  (`~/.hermes/profiles/forgewright-<project>-<hash>`). In Docker the profiles
+  live in the `hermes-profiles` volume, so they survive image updates.
+- **Unmanaged** (no `hermes_base_url`): your existing Hermes setup is used
+  unchanged (default profile, or `hermes_profile`). Configure model and keys
+  with `hermes model` / `hermes setup` as the bot user.
 
 ### Paths
 
@@ -124,7 +159,7 @@ Every key with its default and a short description. See
 ### `claude_timeout_sec`
 
 - Default is 1 hour. Long enough for almost any single-issue task.
-- Applies to whichever agent is active (Claude Code or OpenCode).
+- Applies to whichever agent is active.
 - Shorten to keep costs bounded on noisy platforms; lengthen for large
   refactors.
 

@@ -87,6 +87,14 @@ class Agent(ABC):
         Returns an AgentResult with the outcome.
         """
 
+    def set_scope(self, scope: str) -> None:
+        """Tell the agent which project the next runs are for (optional).
+
+        Called once per project before its issues/MRs are handled. Agents that
+        keep per-project state (e.g. Hermes with ``hermes_learning``) use it;
+        the default is a no-op.
+        """
+
     @property
     @abstractmethod
     def name(self) -> str:

@@ -51,8 +51,9 @@ Done. Next steps:
   2. Make sure the agent CLI is installed for the $BOT_USER user, e.g.:
        sudo -iu $BOT_USER
        # Claude Code: npm install -g @anthropic-ai/claude-code, then 'claude login'
-       # OpenCode:    follow the opencode install instructions
-     or set ANTHROPIC_API_KEY (or the OpenCode provider key) in the systemd drop-in:
+       # Hermes:      curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --non-interactive --skip-browser --skip-computer-use
+       # OpenCode:    (deprecated) follow the opencode install instructions
+     or set ANTHROPIC_API_KEY (Claude) / HERMES_API_KEY (Hermes BYOK) in the systemd drop-in:
        sudo systemctl edit forgewright.service
   3. Run once manually to verify:
        sudo -u $BOT_USER FORGEWRIGHT_CONFIG=$ETC_DIR/config.yaml \\

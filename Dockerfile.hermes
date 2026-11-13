@@ -1,0 +1,73 @@
+FROM python:3.12-slim
+
+ARG TARGETARCH
+ARG SUPERCRONIC_VERSION=0.2.33
+# Hermes update channel: "stable" (default) or "main".
+ARG HERMES_INSTALL_CHANNEL=stable
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git \
+        curl \
+        ca-certificates \
+        openssh-client \
+        xz-utils \
+        libatomic1 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) arch=amd64 ;; \
+      arm64) arch=arm64 ;; \
+      arm)   arch=arm ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/local/bin/supercronic \
+      "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-${arch}"; \
+    chmod +x /usr/local/bin/supercronic
+
+RUN useradd --system --create-home --shell /bin/bash forgewright
+
+RUN install -d -o forgewright -g forgewright \
+      /var/lib/forgewright /var/log/forgewright /opt/hermes
+
+# Hermes Agent (Nous Research) via the official installer, as the runtime
+# user — installed BEFORE the forgewright code is copied in, so code changes
+# don't re-run this slow layer. The source checkout + its own uv-managed
+# Python live under /opt/hermes; Hermes' data dir stays ~/.hermes. Browser and
+# computer-use tooling are skipped — a headless code bot does not need them.
+USER forgewright
+ENV PATH="/home/forgewright/.local/bin:${PATH}"
+RUN set -eux; \
+    curl -fsSL https://hermes-agent.nousresearch.com/install.sh \
+      | HERMES_INSTALL_CHANNEL="${HERMES_INSTALL_CHANNEL}" bash -s -- \
+          --non-interactive --skip-browser --skip-computer-use \
+          --dir /opt/hermes/hermes-agent; \
+    hermes --version; \
+    # The installer's download caches and the upstream test suite are not
+    # needed at runtime.
+    rm -rf /home/forgewright/.hermes/cache/uv \
+           /home/forgewright/.hermes/cache/pnpm \
+           /opt/hermes/hermes-agent/tests; \
+    # Profiles dir exists (owned by forgewright) so a named volume mounted
+    # here starts with the right ownership — it persists what Hermes learns
+    # when hermes_learning is on.
+    mkdir -p /home/forgewright/.hermes/profiles
+
+USER root
+COPY pyproject.toml /opt/forgewright/pyproject.toml
+COPY requirements.txt /opt/forgewright/requirements.txt
+COPY forgewright.py /opt/forgewright/forgewright.py
+COPY forgewright/ /opt/forgewright/forgewright/
+
+RUN pip install --no-cache-dir /opt/forgewright
+
+COPY docker/entrypoint.sh /usr/local/bin/forgewright-entrypoint
+RUN chmod +x /usr/local/bin/forgewright-entrypoint
+
+USER forgewright
+WORKDIR /home/forgewright
+EXPOSE 5000
+
+ENTRYPOINT ["forgewright-entrypoint"]
+CMD ["poll"]

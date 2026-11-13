@@ -6,7 +6,8 @@
 #
 # Pick an agent with a profile:
 #   docker compose --profile claude   up -d   # Claude Code
-#   docker compose --profile opencode up -d   # OpenCode
+#   docker compose --profile hermes   up -d   # Hermes Agent (any OpenAI-compatible model)
+#   docker compose --profile opencode up -d   # OpenCode (deprecated)
 #
 # Secrets and host paths come from .env (see .env.example).
 
@@ -30,6 +31,24 @@ x-claude-common: &claude-common
     - ${CLAUDE_HOME:-./docker/claude-state}/.claude.json:/home/forgewright/.claude.json
     - ${CLAUDE_HOME:-./docker/claude-state}/.claude:/home/forgewright/.claude
 
+x-hermes-common: &hermes-common
+  image: ghcr.io/marcel2508/forgewright-hermes:latest
+  pull_policy: always
+  environment: &hermes-env
+    FORGEWRIGHT_CONFIG: /etc/forgewright/config.yaml
+    PLATFORM_TOKEN: ${PLATFORM_TOKEN:-}
+    # BYOK endpoint key; read by forgewright and handed to Hermes via env only.
+    HERMES_API_KEY: ${HERMES_API_KEY:-}
+    POLL_SCHEDULE: ${POLL_SCHEDULE:-*/5 * * * *}
+  volumes: &hermes-volumes
+    - ./config.yaml:/etc/forgewright/config.yaml:ro
+    - bot-state:/var/lib/forgewright
+    - bot-logs:/var/log/forgewright
+    # Hermes profiles (config is regenerated from config.yaml before every
+    # run). Persisted so that, with hermes_learning: true, what Hermes learns
+    # per project survives image updates; shared by poller and webhook.
+    - hermes-profiles:/home/forgewright/.hermes/profiles
+
 x-opencode-common: &opencode-common
   image: ghcr.io/marcel2508/forgewright-opencode:latest
   pull_policy: always
@@ -46,9 +65,9 @@ x-opencode-common: &opencode-common
     - ${OPENCODE_CONFIG_HOME:-opencode-config}:/home/forgewright/.config/opencode
 
 services:
-  # Each service belongs to two profiles: an umbrella (`claude` / `opencode`)
-  # that starts both poller and webhook, and a per-component profile
-  # (`*-poll` / `*-webhook`) that starts just one. Use the umbrella when
+  # Each service belongs to two profiles: an umbrella (`claude` / `hermes` /
+  # `opencode`) that starts both poller and webhook, and a per-component
+  # profile (`*-poll` / `*-webhook`) that starts just one. Use the umbrella when
   # `webhook_enabled: true`, the `-poll` profile when it's false.
   poller-claude:
     <<: *claude-common
@@ -69,6 +88,27 @@ services:
       # Bind 0.0.0.0 INSIDE the container: Docker's published-port DNAT targets
       # the container's eth0, so binding 127.0.0.1 here makes it unreachable.
       # Host-side exposure is still controlled by WEBHOOK_BIND below.
+      WEBHOOK_HOST: ${WEBHOOK_HOST:-0.0.0.0}
+    ports:
+      - "${WEBHOOK_BIND:-127.0.0.1}:${WEBHOOK_PORT:-5000}:5000"
+
+  poller-hermes:
+    <<: *hermes-common
+    profiles: ["hermes", "hermes-poll"]
+    container_name: forgewright-poller-hermes
+    restart: unless-stopped
+    command: ["poll"]
+
+  webhook-hermes:
+    <<: *hermes-common
+    profiles: ["hermes", "hermes-webhook"]
+    container_name: forgewright-webhook-hermes
+    restart: unless-stopped
+    command: ["webhook"]
+    environment:
+      <<: *hermes-env
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      # Bind 0.0.0.0 INSIDE the container (see webhook-claude for why).
       WEBHOOK_HOST: ${WEBHOOK_HOST:-0.0.0.0}
     ports:
       - "${WEBHOOK_BIND:-127.0.0.1}:${WEBHOOK_PORT:-5000}:5000"
@@ -97,4 +137,5 @@ services:
 volumes:
   bot-state:
   bot-logs:
+  hermes-profiles:
   opencode-config:

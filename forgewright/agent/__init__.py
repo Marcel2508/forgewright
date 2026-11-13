@@ -23,12 +23,23 @@ def create_agent(cfg: Config) -> Agent:
             model=cfg.claude_model,
             timeout_sec=cfg.claude_timeout_sec,
         )
+    if atype == "hermes":
+        from forgewright.agent.hermes import HermesAgent
+
+        return HermesAgent(cfg.hermes_settings())
     if atype == "opencode":
+        import logging
+
         from forgewright.agent.opencode import OpenCodeAgent
+
+        logging.warning(
+            "agent_type 'opencode' is deprecated — consider 'hermes' "
+            "(Hermes Agent, any OpenAI-compatible endpoint)")
 
         return OpenCodeAgent(
             binary=cfg.opencode_binary,
             model=cfg.opencode_model,
             timeout_sec=cfg.claude_timeout_sec,
         )
-    raise ValueError(f"unknown agent_type: {atype!r}")
+    raise ValueError(
+        f"unknown agent_type: {atype!r} (expected claude, hermes or opencode)")
