@@ -18,6 +18,8 @@ import threading
 from pathlib import Path
 
 from forgewright.agent.base import (
+    FORGE_SECRET_ENV_VARS,
+    MAX_ARG_BYTES,
     Agent,
     AgentResult,
     kill_process_group,
@@ -78,12 +80,18 @@ class OpenCodeAgent(Agent):
         cmd.append(prompt)
 
         env = os.environ.copy()
-        # Keep high-privilege forge credentials out of the agent's environment so
-        # a prompt-injection payload in untrusted issue/MR text can't read and
-        # exfiltrate them. The agent never needs these (git push is handled by the
-        # wrapper via GIT_ASKPASS in a separate subprocess env).
-        for secret_var in ("PLATFORM_TOKEN", "GITLAB_TOKEN", "GITHUB_TOKEN",
-                           "FORGEWRIGHT_GIT_TOKEN", "WEBHOOK_SECRET"):
+        if len(prompt.encode()) > MAX_ARG_BYTES:
+            # `opencode run` only takes the message as an argument; above the
+            # kernel's per-argument limit exec() fails with E2BIG. Report a
+            # clean failure instead of crashing the handler.
+            msg = (f"prompt is {len(prompt.encode())} bytes, above the "
+                   f"{MAX_ARG_BYTES}-byte command-line limit that OpenCode's "
+                   f"`run` needs — use agent_type claude or hermes for very "
+                   f"large merge requests")
+            logging.error("AGENT [%s] %s", self.name, msg)
+            return AgentResult(ok=False, output=msg, summary="")
+
+        for secret_var in FORGE_SECRET_ENV_VARS:
             env.pop(secret_var, None)
         env.setdefault("CI", "1")
 

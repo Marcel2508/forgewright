@@ -9,6 +9,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Forge credentials that must never reach the agent subprocess: the agent runs
+# without permission prompts on prompts built from untrusted issue/MR text, so
+# a prompt-injection payload must not be able to read and exfiltrate them. The
+# agent never needs them (git push runs in the wrapper via GIT_ASKPASS).
+FORGE_SECRET_ENV_VARS = ("PLATFORM_TOKEN", "GITLAB_TOKEN", "GITHUB_TOKEN",
+                         "FORGEWRIGHT_GIT_TOKEN", "WEBHOOK_SECRET")
+
+# Linux caps a single argv string at 32 pages (MAX_ARG_STRLEN = 128 KiB).
+# Prompts with a big review diff can exceed that, so agents must not pass the
+# prompt as one command-line argument above this size.
+MAX_ARG_BYTES = 128 * 1024 - 1
+
+
 def _pgid(proc) -> int | None:
     """The agent's process-group id, or None if unknown. Only real pids > 1
     count, so a bogus value can never signal init's group (or our own)."""

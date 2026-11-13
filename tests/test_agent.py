@@ -104,8 +104,13 @@ class TestClaudeCodeAgent:
         assert result.summary == "test summary"
 
         cmd = mock_popen.call_args[0][0]
-        assert cmd[:3] == ["claude", "-p", "do stuff"]
+        assert cmd[:2] == ["claude", "-p"]
         assert "--dangerously-skip-permissions" in cmd
+        # The prompt goes through stdin, never argv (128 KiB argv limit).
+        assert "do stuff" not in cmd
+        assert mock_popen.call_args[1]["stdin"] is not None
+        proc.stdin.write.assert_called_once_with("do stuff")
+        proc.stdin.close.assert_called_once()
 
     @patch("forgewright.agent.claude_code.subprocess.Popen")
     def test_run_with_model(self, mock_popen, tmp_path):

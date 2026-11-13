@@ -9,12 +9,22 @@ import threading
 from pathlib import Path
 
 from forgewright.agent.base import (
+    FORGE_SECRET_ENV_VARS,
     Agent,
     AgentResult,
     kill_process_group,
     reap_leftovers,
 )
 from forgewright.parsing import read_summary
+
+
+def _feed_stdin(proc, text: str) -> None:
+    try:
+        if proc.stdin is not None:
+            proc.stdin.write(text)
+            proc.stdin.close()
+    except (BrokenPipeError, OSError, ValueError):
+        pass  # agent exited early; its exit code / output tell the story
 
 
 class ClaudeCodeAgent(Agent):
@@ -31,18 +41,15 @@ class ClaudeCodeAgent(Agent):
         return "Claude Code"
 
     def run(self, prompt: str, cwd: Path) -> AgentResult:
-        cmd = [self._binary, "-p", prompt, "--dangerously-skip-permissions"]
+        # The prompt goes in on stdin, not argv: a big review diff exceeds
+        # Linux' 128 KiB per-argument limit and Popen would fail with E2BIG.
+        # (`claude -p` reads the prompt from stdin when no argument is given.)
+        cmd = [self._binary, "-p", "--dangerously-skip-permissions"]
         if self._model:
             cmd += ["--model", self._model]
 
         env = os.environ.copy()
-        # Keep high-privilege forge credentials out of the agent's environment:
-        # the agent runs with --dangerously-skip-permissions on prompts built
-        # from untrusted issue/MR text, so a prompt-injection payload must not be
-        # able to read and exfiltrate them. The agent never needs these (git push
-        # is handled by the wrapper via GIT_ASKPASS in a separate subprocess).
-        for secret_var in ("PLATFORM_TOKEN", "GITLAB_TOKEN", "GITHUB_TOKEN",
-                           "FORGEWRIGHT_GIT_TOKEN", "WEBHOOK_SECRET"):
+        for secret_var in FORGE_SECRET_ENV_VARS:
             env.pop(secret_var, None)
         env.setdefault("CI", "1")
 
@@ -57,8 +64,14 @@ class ClaudeCodeAgent(Agent):
             with open(live_log, "w") as lf:
                 proc = subprocess.Popen(
                     cmd, cwd=cwd, env=env,
+                    stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, start_new_session=True)
+                # Feed the prompt from a thread so a large prompt can never
+                # deadlock against the stdout reader below.
+                feeder = threading.Thread(
+                    target=_feed_stdin, args=(proc, prompt), daemon=True)
+                feeder.start()
                 timed_out = threading.Event()
 
                 def _kill_on_timeout():
@@ -74,6 +87,7 @@ class ClaudeCodeAgent(Agent):
                         lf.write(line)
                         lf.flush()
                     proc.wait()
+                    feeder.join(timeout=5)
                 finally:
                     timer.cancel()
                     reap_leftovers(proc)
