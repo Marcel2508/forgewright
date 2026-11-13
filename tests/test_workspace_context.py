@@ -213,3 +213,18 @@ class TestCiLogFiles:
             self._forge("boom"), 1,
             Pipeline(id=3, sha="s", status="failed", web_url=""))
         assert "boom" in block and "Full log" not in block
+
+
+class TestGitLabPathEncoding:
+    def test_project_path_is_url_encoded(self):
+        from unittest.mock import MagicMock
+        from forgewright.platform.gitlab import GitLabPlatform
+        plat = GitLabPlatform("https://git.example.com", "t")
+        resp = MagicMock()
+        resp.json.return_value = {"id": 9, "path_with_namespace": "g/sub/x",
+                                  "default_branch": "main"}
+        with patch.object(plat, "_req", return_value=resp) as req:
+            plat.project("g/sub/x")
+            plat.project(42)
+        assert req.call_args_list[0][0][1] == "/projects/g%2Fsub%2Fx"
+        assert req.call_args_list[1][0][1] == "/projects/42"

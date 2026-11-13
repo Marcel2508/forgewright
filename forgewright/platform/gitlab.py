@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import time
+from urllib.parse import quote
 from typing import Any, Iterable
 
 import requests
@@ -242,7 +243,9 @@ class GitLabPlatform(Platform):
             order_by="last_activity_at")]
 
     def project(self, project_id: ProjectID) -> Project:
-        r = self._req("GET", f"/projects/{project_id}")
+        # Accepts a numeric id or a "group/sub/name" path; GitLab needs the
+        # path URL-encoded ("group%2Fsub%2Fname"); already-encoded ids pass.
+        r = self._req("GET", f"/projects/{quote(str(project_id), safe='%')}")
         r.raise_for_status()
         return _parse_project(r.json())
 
