@@ -212,6 +212,7 @@ Claude Code's real per-repo config dir and often committed:
 | `.forgewright/agent-live.log` | bot | live agent output (`tail -f`) |
 | `.forgewright/mr.diff` | bot → agent | complete MR diff (review mode), never truncated |
 | `.forgewright/ci/<job>.log` | bot → agent | complete logs of failed CI jobs |
+| `.forgewright/context/<name>/` | bot → agent | read-only `context_repos` checkouts |
 
 `/.forgewright/` is added to the mirror's `info/exclude`, which covers every
 worktree of that mirror — an agent running `git add -A` can't commit or push
@@ -230,6 +231,18 @@ worktree. The bot parses this structured file:
 - Everything else → treated as a general comment
 
 Parsing lives in `parsing.py`; posting lives in `posting.py`.
+
+## Context repositories
+
+`context_repos` (`forgewright/context_repos.py`) lists extra repositories per
+watched project (`"*"` = all). For each run forgewright updates a mirror of
+each one with its own token and checks the configured ref (default branch,
+tag or SHA) out detached under `.forgewright/context/<name>/`; the prompt
+lists them with ref and SHA. The agent never sees the token, nothing there is
+committed, and a repo the token can't read is reported to the agent as "not
+available" without failing the run. Content from these repos can end up in
+comments on the watched project, so only list repos whose content its
+audience may see.
 
 ## Safety constraints
 

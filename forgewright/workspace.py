@@ -8,6 +8,7 @@ which is Claude Code's real per-repo config dir and is often committed):
     .forgewright/agent-live.log        live agent output (tail -f)
     .forgewright/mr.diff               full MR diff (review mode)
     .forgewright/ci/<job>.log          full logs of failed CI jobs
+    .forgewright/context/<name>/       extra read-only repos (context_repos)
 
 The directory is listed in the mirror's ``info/exclude``, which applies to
 every worktree of that mirror, so an agent running ``git add -A`` can never
@@ -25,6 +26,7 @@ SUMMARY_FILE = "last-run-summary.md"
 LIVE_LOG = "agent-live.log"
 MR_DIFF = "mr.diff"
 CI_DIR = "ci"
+CONTEXT_DIR = "context"
 
 # The path agents are told to write to (relative to the worktree root).
 SUMMARY_REL = f"{WORK_DIR}/{SUMMARY_FILE}"

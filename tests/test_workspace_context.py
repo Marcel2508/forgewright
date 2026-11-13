@@ -1,7 +1,7 @@
-"""Tests for the .forgewright/ scratch dir and the diff/CI files in it.
+"""Tests for the .forgewright/ scratch dir, diff/CI files and context repos.
 
-Most tests use real git: the point is git behaviour (excludes, worktrees),
-which mocks would only pretend to check.
+Most tests use real git: the point is git behaviour (excludes, worktrees,
+refs), which mocks would only pretend to check.
 """
 
 from __future__ import annotations
@@ -10,6 +10,17 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+from forgewright.config import Config
+from forgewright.context_repos import (
+    ContextRepoSpec,
+    attach_context_repos,
+    detach_context_repos,
+    format_context_block,
+    parse_context_repos,
+    specs_for,
+)
 from forgewright.formatting import format_review_diff, unified_diff_file
 from forgewright.git import clone_or_update_mirror, make_worktree
 from forgewright.handlers import _fetch_failed_job_logs, handle_mr_review
@@ -215,6 +226,117 @@ class TestCiLogFiles:
         assert "boom" in block and "Full log" not in block
 
 
+# --------------------------------------------------------------------------
+# context_repos
+# --------------------------------------------------------------------------
+
+class TestContextReposConfig:
+    def test_parse(self):
+        parsed = parse_context_repos({
+            "g/app": ["g/lib", {"path": "g/spec/", "ref": "v2"}],
+            "*": [{"path": "g/docs", "ref": 1}],
+        })
+        assert parsed["g/app"] == [ContextRepoSpec("g/lib"),
+                                   ContextRepoSpec("g/spec", "v2")]
+        assert parsed["*"] == [ContextRepoSpec("g/docs", "1")]
+
+    @pytest.mark.parametrize("raw", [
+        ["g/lib"], {"g/app": "g/lib"}, {"g/app": [{"ref": "x"}]},
+        {"g/app": [""]}, {"g/app": [{"path": "g/x", "ref": ["a"]}]},
+    ])
+    def test_invalid(self, raw):
+        with pytest.raises(SystemExit):
+            parse_context_repos(raw)
+
+    def test_specs_for_merges_wildcard_and_skips_self(self, tmp_config):
+        tmp_config.context_repos = parse_context_repos({
+            "g/app": ["g/lib", {"path": "g/shared", "ref": "v2"}],
+            "*": ["g/shared", "g/docs", "g/app"],
+        })
+        specs = specs_for(tmp_config, make_project(path="g/app"))
+        assert [(s.path, s.ref) for s in specs] == [
+            ("g/lib", None), ("g/shared", "v2"), ("g/docs", None)]
+        other = specs_for(tmp_config, make_project(path="g/other"))
+        assert [s.path for s in other] == ["g/shared", "g/docs", "g/app"]
+
+    def test_loaded_from_yaml(self, tmp_path):
+        p = tmp_path / "c.yaml"
+        p.write_text(
+            "platform_url: https://g\nplatform_token: t\n"
+            "bot_username: forgewright\n"
+            f"workdir: {tmp_path}/w\nstate_file: {tmp_path}/s\n"
+            f"lock_dir: {tmp_path}/l\nlog_file: {tmp_path}/b.log\n"
+            "context_repos:\n  g/app:\n    - g/lib\n")
+        assert Config.load(str(p)).context_repos == {
+            "g/app": [ContextRepoSpec("g/lib")]}
+
+
+class TestContextReposCheckout:
+    def _setup(self, tmp_config, tmp_path):
+        app = make_upstream(tmp_path, "app", {"main.py": "import lib\n"})
+        lib = make_upstream(tmp_path, "lib", {"lib.py": "VERSION = 2\n"},
+                            tag="v2")
+        projects = {
+            "g/app": local_project(1, "g/app", app),
+            "g/lib": local_project(2, "g/lib", lib),
+        }
+        forge = LocalForge(projects)
+        mirror = clone_or_update_mirror(tmp_config, forge, projects["g/app"])
+        wt = make_worktree(tmp_config, mirror, 1, "forgewright/x", "main")
+        return forge, projects, wt, lib
+
+    def test_checkout_ref_readable_and_never_committed(self, tmp_config,
+                                                       tmp_path):
+        forge, projects, wt, lib = self._setup(tmp_config, tmp_path)
+        tmp_config.context_repos = parse_context_repos({"g/app": [
+            {"path": "g/lib", "ref": "v2"}, "g/missing"]})
+
+        repos = attach_context_repos(tmp_config, forge, projects["g/app"], wt)
+
+        ok, missing = repos
+        assert ok.ok and ok.ref == "v2"
+        assert ok.sha == git("rev-parse", "v2^{commit}", cwd=lib)
+        ctx = wt / ok.rel_dir
+        assert (ctx / "lib.py").read_text() == "VERSION = 2\n"
+        assert not (ctx / "after-tag.txt").exists()     # pinned to the tag
+        assert not missing.ok and "404" in missing.error
+
+        block = format_context_block(repos)
+        assert "`g/lib` @ `v2`" in block and ok.rel_dir in block
+        assert "`g/missing` — not available" in block
+
+        # the agent edits and runs `git add -A` in the main repo
+        (ctx / "lib.py").write_text("hacked\n")
+        (wt / "change.py").write_text("x\n")
+        git("add", "-A", cwd=wt)
+        assert git("diff", "--cached", "--name-only", cwd=wt) == "change.py"
+
+        detach_context_repos(repos)
+        assert not ctx.exists()
+        lib_mirror = tmp_config.workdir / "mirrors" / "2.git"
+        assert str(ctx) not in git("worktree", "list", cwd=lib_mirror)
+
+    def test_default_branch_when_no_ref(self, tmp_config, tmp_path):
+        forge, projects, wt, lib = self._setup(tmp_config, tmp_path)
+        tmp_config.context_repos = parse_context_repos({"*": ["g/lib"]})
+        (repo,) = attach_context_repos(tmp_config, forge, projects["g/app"],
+                                       wt)
+        assert repo.ref == "main"
+        assert (wt / repo.rel_dir / "after-tag.txt").exists()
+
+    def test_bad_ref_is_reported_not_raised(self, tmp_config, tmp_path):
+        forge, projects, wt, _ = self._setup(tmp_config, tmp_path)
+        tmp_config.context_repos = parse_context_repos({"g/app": [
+            {"path": "g/lib", "ref": "no-such-branch"}]})
+        (repo,) = attach_context_repos(tmp_config, forge, projects["g/app"],
+                                       wt)
+        assert not repo.ok and "no-such-branch" in repo.error
+
+    def test_no_config_no_block(self, tmp_config):
+        assert specs_for(tmp_config, make_project()) == []
+        assert format_context_block([]) == ""
+
+
 class TestGitLabPathEncoding:
     def test_project_path_is_url_encoded(self):
         from unittest.mock import MagicMock
@@ -228,3 +350,45 @@ class TestGitLabPathEncoding:
             plat.project(42)
         assert req.call_args_list[0][0][1] == "/projects/g%2Fsub%2Fx"
         assert req.call_args_list[1][0][1] == "/projects/42"
+
+
+class TestEndToEndPush:
+    def test_pushed_branch_contains_only_real_changes(self, tmp_config,
+                                                      tmp_path):
+        """Real mirror, worktree, context repo and push: the agent stages
+        everything with `git add -A`, yet the remote branch only gets its
+        actual code change — no summary, live log, diff or context repo."""
+        from forgewright.agent.base import Agent, AgentResult
+        from forgewright.handlers import handle_issue
+        from forgewright.parsing import read_summary
+        from tests.conftest import make_issue
+
+        app = make_upstream(tmp_path, "app", {"main.py": "print(1)\n"})
+        lib = make_upstream(tmp_path, "lib", {"lib.py": "X = 1\n"})
+        projects = {"g/app": local_project(1, "g/app", app),
+                    "g/lib": local_project(2, "g/lib", lib)}
+        forge = LocalForge(projects)
+        tmp_config.context_repos = parse_context_repos({"g/app": ["g/lib"]})
+
+        class CommittingAgent(Agent):
+            name = "committer"
+
+            def run(self, prompt, cwd):
+                assert "`g/lib` @ `main`" in prompt
+                (cwd / "feature.py").write_text("print(2)\n")
+                summary_path(cwd).write_text("## General\nAdded feature")
+                git("add", "-A", cwd=cwd)
+                git("-c", "user.email=a@b", "-c", "user.name=a", "commit",
+                    "-q", "-m", "feat: add feature", cwd=cwd)
+                return AgentResult(ok=True, output="",
+                                   summary=read_summary(cwd))
+
+        handle_issue(tmp_config, forge, CommittingAgent(),
+                     State(tmp_path / "s.json"), projects["g/app"],
+                     make_issue(number=4, title="Add feature",
+                                description="@forgewright add it"), [])
+
+        branch = "forgewright/issue-4-add-feature"
+        files = git("ls-tree", "-r", "--name-only", branch, cwd=app)
+        assert sorted(files.splitlines()) == ["feature.py", "main.py"]
+        assert any(c[0] == "create_mr" for c in forge.calls)

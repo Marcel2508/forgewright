@@ -41,6 +41,7 @@ forgewright/                 # Python package
   posting.py                 # post_mr_responses, post_review_comments
   decision.py                # is_review_mode, fingerprint_*, should_process_*, select_projects
   workspace.py               # .forgewright/ scratch dir paths + git exclude
+  context_repos.py           # extra read-only repos per project (context_repos)
   handlers.py                # handle_issue, handle_mr, handle_mr_review, process_project
   webhook.py                 # Flask webhook server for near-real-time GitLab/GitHub events
   main.py                    # setup_logging, main(), argparse, --serve mode
@@ -110,9 +111,11 @@ main(--serve) → create_app(cfg) → Flask server
 - Fingerprints include: `description_hash`, `last_note_id`/`last_note_at` (human notes only), `labels`, `pipeline_id`/`pipeline_sha`/`pipeline_status`, `head_sha`, `bot_requested`, `desc_mention`
 - Handlers save the fingerprint as soon as the agent has run (in a `finally`), so a crash while pushing/posting never re-runs the agent
 
-### Agent scratch dir
+### Agent scratch dir and context repos
 
-Everything exchanged with the agent lives in `<worktree>/.forgewright/` (`workspace.py`: `last-run-summary.md`, `agent-live.log`, `mr.diff`, `ci/<job>.log`) — never `.claude/`, which is Claude Code's real, often committed config dir. `make_worktree` adds `/.forgewright/` to the mirror's `info/exclude`, so `git add -A` in any worktree can't commit it. Review prompts carry a file overview + diff excerpt (40k chars) and point at `.forgewright/mr.diff` / `git diff <base>...<head>`; CI failures get log tails inline, full logs as files.
+Everything exchanged with the agent lives in `<worktree>/.forgewright/` (`workspace.py`: `last-run-summary.md`, `agent-live.log`, `mr.diff`, `ci/<job>.log`, `context/<name>/`) — never `.claude/`, which is Claude Code's real, often committed config dir. `make_worktree` adds `/.forgewright/` to the mirror's `info/exclude`, so `git add -A` in any worktree can't commit it. Review prompts carry a file overview + diff excerpt (40k chars) and point at `.forgewright/mr.diff` / `git diff <base>...<head>`; CI failures get log tails inline, full logs as files.
+
+`context_repos` (`context_repos.py`, config: `{project_path or "*": [path | {path, ref}]}`) checks extra repos out read-only under `.forgewright/context/<name>/` via their own mirrors and the bot's token; `attach_context_repos` never raises (unavailable repos are listed as such), `detach_context_repos` runs before `cleanup_worktree`. Prompts get them through the `{context_block}` placeholder.
 
 ### Summary parsing
 

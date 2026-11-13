@@ -20,6 +20,11 @@ from forgewright.authz import (
     filter_notes,
     make_authorizer,
 )
+from forgewright.context_repos import (
+    attach_context_repos,
+    detach_context_repos,
+    format_context_block,
+)
 from forgewright.decision import (
     extract_user_instructions,
     fingerprint_issue,
@@ -205,8 +210,11 @@ def handle_issue(cfg: Config, platform: Platform, agent: Agent,
             mirror = clone_or_update_mirror(cfg, platform, project)
             wt = make_worktree(cfg, mirror, pid, branch, base_branch)
             delete_branch_after = False
+            context: list = []
             try:
+                context = attach_context_repos(cfg, platform, project, wt)
                 prompt = ISSUE_PROMPT.format(
+                    context_block=format_context_block(context),
                     repo_path=project.path,
                     base_branch=base_branch,
                     iid=number,
@@ -282,6 +290,7 @@ def handle_issue(cfg: Config, platform: Platform, agent: Agent,
                         f"```\n{result.output[-3000:]}\n```\n</details>"
                         f"{hint}")
             finally:
+                detach_context_repos(context)
                 cleanup_worktree(mirror, wt)
             if delete_branch_after:
                 run(["git", "branch", "-D", branch], cwd=mirror, check=False)
@@ -338,7 +347,9 @@ def handle_mr_review(cfg: Config, platform: Platform, agent: Agent,
             mirror = clone_or_update_mirror(cfg, platform, project)
             wt = make_worktree(cfg, mirror, pid, wt_name, base_branch,
                                detach_ref=detach_ref)
+            context: list = []
             try:
+                context = attach_context_repos(cfg, platform, project, wt)
                 mr_detail: MRDetail | None = None
                 try:
                     mr_detail = platform.mr_changes(pid, number)
@@ -364,6 +375,7 @@ def handle_mr_review(cfg: Config, platform: Platform, agent: Agent,
                     user_instructions = f"{FORK_NOTE}\n\n{user_instructions}"
 
                 prompt = MR_REVIEW_PROMPT.format(
+                    context_block=format_context_block(context),
                     repo_path=project.path,
                     base_branch=base_branch,
                     mr_iid=number,
@@ -431,6 +443,7 @@ def handle_mr_review(cfg: Config, platform: Platform, agent: Agent,
                         post_review_comments(
                             platform, pid, fresh_detail, summary)
             finally:
+                detach_context_repos(context)
                 cleanup_worktree(mirror, wt)
     finally:
         if agent_ran:
@@ -465,7 +478,9 @@ def handle_mr(cfg: Config, platform: Platform, agent: Agent,
 
             mirror = clone_or_update_mirror(cfg, platform, project)
             wt = make_worktree(cfg, mirror, pid, branch, base_branch)
+            context: list = []
             try:
+                context = attach_context_repos(cfg, platform, project, wt)
                 prev_fp = (prev or {}).get("fingerprint") or {}
                 prev_note_at = prev_fp.get("last_note_at")
                 cutoff = parse_ts(prev_note_at) if prev_note_at else None
@@ -508,6 +523,7 @@ def handle_mr(cfg: Config, platform: Platform, agent: Agent,
                     issue_block = f"Issue #{m.group(1)} ({issue_url})"
 
                 prompt = MR_UPDATE_PROMPT.format(
+                    context_block=format_context_block(context),
                     repo_path=project.path,
                     base_branch=base_branch,
                     mr_iid=number,
@@ -551,6 +567,7 @@ def handle_mr(cfg: Config, platform: Platform, agent: Agent,
                         f"pipeline fails again I will not retry on my own "
                         f"— leave a comment here to continue.")
             finally:
+                detach_context_repos(context)
                 cleanup_worktree(mirror, wt)
     finally:
         if agent_ran:

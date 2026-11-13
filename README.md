@@ -137,6 +137,15 @@ the same git-worktree pipeline:
   wrote in.
 - **Configurable mention** — `bot_username: jarvis` ⇒ reacts to `@jarvis`
   instead. The name `forgewright` is just the default.
+- **Context from other repos** — `context_repos` checks shared libraries,
+  API specs or docs out read-only next to the code, so the agent can read
+  them without ever getting the forge token.
+- **Big MRs stay whole** — the full diff and complete CI logs are handed to
+  the agent as files in its scratch dir `.forgewright/` (git-excluded, never
+  committed), with an overview and excerpt in the prompt.
+- **Hardened defaults** — Draft MRs/PRs only, `forgewright/…` branch prefix,
+  per-branch locks, agent timeout, tokens never in git config, hardened
+  systemd units.
 
 ---
 

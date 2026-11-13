@@ -58,6 +58,27 @@ Every key with its default and a short description. See
 | `request_timeout_sec` | `30` | Timeout per platform API request. |
 | `http_retries` | `3` | Retries on 5xx and timeouts. |
 
+### Context repositories
+
+| Key | Default | Description |
+|---|---|---|
+| `context_repos` | `{}` | Extra repositories the agent may **read**, per watched project path (`"*"` = every project). Entries are a repo path or `{path, ref}` (branch, tag or SHA; default branch if omitted). Checked out read-only under `.forgewright/context/<name>/`, cloned with the bot's token (the agent never gets it), never committed or pushed. |
+
+```yaml
+context_repos:
+  group/app:
+    - group/shared-lib
+    - path: group/api-spec
+      ref: v2
+  "*":
+    - group/engineering-docs
+```
+
+The bot token must be able to read these repos; one it can't is shown to the
+agent as "not available" and the run continues. **Visibility:** what the agent
+reads there can end up in MR/issue comments of the watched project, so only
+list repos whose content everyone who sees that project may see.
+
 ### Agent
 
 | Key | Default | Description |

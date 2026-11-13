@@ -17,6 +17,7 @@ action every time.
 # Repository
 {repo_path}   (default branch: {base_branch})
 
+{context_block}
 # Issue !{iid}: {title}
 URL: {web_url}
 
@@ -144,6 +145,7 @@ must be your final action every time.
 # Repository
 {repo_path}   (default branch: {base_branch})
 
+{context_block}
 # Merge Request !{mr_iid}: {title}
 URL: {web_url}
 Branch: {branch}
@@ -271,6 +273,7 @@ as a FAILURE. Writing this file must be your final action every time.
 # Repository
 {repo_path}   (default branch: {base_branch})
 
+{context_block}
 # Merge Request !{mr_iid}: {title}
 URL: {web_url}
 Author: @{mr_author}

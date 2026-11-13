@@ -70,6 +70,9 @@ class Config:
     hermes_max_turns: int | None = None
     hermes_profile: str | None = None
     hermes_learning: bool = False
+    # Extra read-only repos per watched project ("*" = all), see
+    # forgewright/context_repos.py: {project_path: [ContextRepoSpec, ...]}
+    context_repos: dict = field(default_factory=dict)
     # Webhook server
     webhook_enabled: bool = False
     webhook_host: str = "127.0.0.1"
@@ -163,6 +166,7 @@ class Config:
             opencode_binary=raw.get("opencode_binary", "opencode"),
             opencode_model=raw.get("opencode_model"),
             **_hermes_fields(raw),
+            context_repos=_context_repos(raw),
             webhook_enabled=bool(raw.get("webhook_enabled", False)),
             webhook_host=(raw.get("webhook_host")
                           or os.environ.get("WEBHOOK_HOST")
@@ -261,3 +265,8 @@ def _hermes_fields(raw: dict) -> dict:
         "hermes_profile": profile,
         "hermes_learning": learning,
     }
+
+
+def _context_repos(raw: dict) -> dict:
+    from forgewright.context_repos import parse_context_repos
+    return parse_context_repos(raw.get("context_repos"))

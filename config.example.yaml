@@ -54,6 +54,22 @@ git_user_email: "forgewright@example.com"
 projects_include: []
 projects_exclude: []
 
+# Extra repositories the agent may READ for context (shared libraries, API
+# specs, docs). Keyed by watched project path; "*" applies to every project.
+# forgewright clones them with its own token and checks them out read-only
+# under .forgewright/context/<name>/ in the worktree — the agent never gets
+# the token, and nothing there is committed or pushed. A repo the token can't
+# read is shown to the agent as "not available"; the run goes on.
+# Visibility: text from these repos can end up in comments on the watched
+# project, so only list repos whose content everyone there may see.
+#   context_repos:
+#     group/app:
+#       - group/shared-lib            # default branch
+#       - path: group/api-spec
+#         ref: v2                     # branch, tag or commit SHA
+#     "*":
+#       - group/engineering-docs
+context_repos: {}
 
 # Authorization: minimum role a user must have on the repo to interact with the
 # bot. Only mentions from users at or above this role trigger the bot, and
