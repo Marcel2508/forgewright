@@ -238,7 +238,7 @@ class TestHeadShaSelfTriggerFix:
              patch("forgewright.handlers._wait_for_mr_update"):
             mc.return_value = tmp_path / "mirror"
             wt = tmp_path / "wt"
-            (wt / ".claude").mkdir(parents=True, exist_ok=True)
+            (wt / ".forgewright").mkdir(parents=True, exist_ok=True)
             mw.return_value = wt
             handle_mr(tmp_config, platform, agent, state, project, mr,
                       [], [], None, "new commits")

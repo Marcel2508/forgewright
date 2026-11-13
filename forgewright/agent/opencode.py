@@ -26,6 +26,7 @@ from forgewright.agent.base import (
     reap_leftovers,
 )
 from forgewright.parsing import read_summary
+from forgewright.workspace import live_log_path
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _NOISE_PREFIXES = (
@@ -79,7 +80,6 @@ class OpenCodeAgent(Agent):
             cmd += ["--model", self._model]
         cmd.append(prompt)
 
-        env = os.environ.copy()
         if len(prompt.encode()) > MAX_ARG_BYTES:
             # `opencode run` only takes the message as an argument; above the
             # kernel's per-argument limit exec() fails with E2BIG. Report a
@@ -91,11 +91,12 @@ class OpenCodeAgent(Agent):
             logging.error("AGENT [%s] %s", self.name, msg)
             return AgentResult(ok=False, output=msg, summary="")
 
+        env = os.environ.copy()
         for secret_var in FORGE_SECRET_ENV_VARS:
             env.pop(secret_var, None)
         env.setdefault("CI", "1")
 
-        live_log = cwd / ".claude" / "claude-live.log"
+        live_log = live_log_path(cwd)
         live_log.parent.mkdir(parents=True, exist_ok=True)
 
         logging.info("AGENT [%s] starting in %s (prompt %d chars)",
@@ -145,7 +146,7 @@ class OpenCodeAgent(Agent):
         summary = read_summary(cwd)
         if ok and not summary:
             # opencode (esp. with smaller models) often answers directly in its
-            # stdout response instead of writing .claude/last-run-summary.md as
+            # stdout response instead of writing the summary file as
             # the prompt asks. Fall back to the cleaned stdout so the user still
             # gets the answer rather than "(no summary)".
             summary = _clean_opencode_output(output)

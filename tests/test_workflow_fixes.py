@@ -246,7 +246,7 @@ class TestForks:
             self, mock_clone, mock_make_wt, mock_cleanup, mock_push,
             mock_run, tmp_config, mock_platform, tmp_path):
         wt = tmp_path / "wt"
-        (wt / ".claude").mkdir(parents=True)
+        (wt / ".forgewright").mkdir(parents=True)
         mock_make_wt.return_value = wt
         mock_clone.return_value = tmp_path / "mirror"
         mr = make_mr(number=7, source_branch="develop", author="mallory",
@@ -270,7 +270,7 @@ class TestForks:
 
 def _patch_git(tmp_path, push_returns=""):
     wt = tmp_path / "wt"
-    (wt / ".claude").mkdir(parents=True, exist_ok=True)
+    (wt / ".forgewright").mkdir(parents=True, exist_ok=True)
     patches = [
         patch("forgewright.handlers.clone_or_update_mirror",
               return_value=tmp_path / "mirror"),

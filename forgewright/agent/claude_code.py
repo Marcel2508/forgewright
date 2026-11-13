@@ -16,6 +16,7 @@ from forgewright.agent.base import (
     reap_leftovers,
 )
 from forgewright.parsing import read_summary
+from forgewright.workspace import live_log_path
 
 
 def _feed_stdin(proc, text: str) -> None:
@@ -53,7 +54,7 @@ class ClaudeCodeAgent(Agent):
             env.pop(secret_var, None)
         env.setdefault("CI", "1")
 
-        live_log = cwd / ".claude" / "claude-live.log"
+        live_log = live_log_path(cwd)
         live_log.parent.mkdir(parents=True, exist_ok=True)
 
         logging.info("AGENT [%s] starting in %s (prompt %d chars)",

@@ -190,9 +190,24 @@ loops. The fingerprint is stored as soon as the agent has run, even if
 pushing or posting fails afterwards, so a crash cannot cause repeated agent
 runs.
 
+## The agent's scratch dir: `.forgewright/`
+
+Everything exchanged with the agent lives in `.forgewright/` at the worktree
+root (`forgewright/workspace.py`) — deliberately not `.claude/`, which is
+Claude Code's real per-repo config dir and often committed:
+
+| Path | Direction | Content |
+|---|---|---|
+| `.forgewright/last-run-summary.md` | agent → bot | the structured result (see below) |
+| `.forgewright/agent-live.log` | bot | live agent output (`tail -f`) |
+
+`/.forgewright/` is added to the mirror's `info/exclude`, which covers every
+worktree of that mirror — an agent running `git add -A` can't commit or push
+any of it.
+
 ## Summary parsing
 
-The AI agent writes its output to `.claude/last-run-summary.md` inside the
+The AI agent writes its output to `.forgewright/last-run-summary.md` inside the
 worktree. The bot parses this structured file:
 
 - `## Reply to discussion <id>` → threaded reply on that MR discussion

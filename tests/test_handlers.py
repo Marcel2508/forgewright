@@ -29,7 +29,7 @@ def _setup_handler_mocks(mocks, tmp_path, push_returns=""):
     mock_clone.return_value = tmp_path / "mirror"
     wt = tmp_path / "worktree"
     wt.mkdir(exist_ok=True)
-    (wt / ".claude").mkdir(exist_ok=True)
+    (wt / ".forgewright").mkdir(exist_ok=True)
     mock_make_wt.return_value = wt
     mock_push.return_value = push_returns
     return wt

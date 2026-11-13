@@ -1,5 +1,6 @@
 .git
 .claude
+.forgewright
 __pycache__
 *.pyc
 *.pyo

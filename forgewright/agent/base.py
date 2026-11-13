@@ -69,7 +69,7 @@ class AgentResult:
     """Result of running an AI coding agent."""
     ok: bool        # True if exit code was 0
     output: str     # Combined stdout/stderr text
-    summary: str    # Contents of .claude/last-run-summary.md (may be empty)
+    summary: str    # Contents of .forgewright/last-run-summary.md (may be empty)
 
 
 class Agent(ABC):
@@ -82,7 +82,7 @@ class Agent(ABC):
         The agent should:
         - Read and modify files in cwd as needed
         - Create commits (but NOT push)
-        - Write a summary to cwd/.claude/last-run-summary.md
+        - Write a summary to cwd/.forgewright/last-run-summary.md
 
         Returns an AgentResult with the outcome.
         """

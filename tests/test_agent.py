@@ -91,7 +91,7 @@ class TestClaudeCodeAgent:
         proc.returncode = 0
         mock_popen.return_value = proc
 
-        summary_dir = tmp_path / ".claude"
+        summary_dir = tmp_path / ".forgewright"
         summary_dir.mkdir()
         (summary_dir / "last-run-summary.md").write_text("test summary")
 
@@ -120,7 +120,7 @@ class TestClaudeCodeAgent:
         proc.returncode = 0
         mock_popen.return_value = proc
 
-        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".forgewright").mkdir()
 
         agent = ClaudeCodeAgent(model="opus")
         agent.run("prompt", tmp_path)
@@ -137,7 +137,7 @@ class TestClaudeCodeAgent:
         proc.returncode = 1
         mock_popen.return_value = proc
 
-        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".forgewright").mkdir()
 
         agent = ClaudeCodeAgent()
         result = agent.run("fail", tmp_path)
@@ -156,7 +156,7 @@ class TestClaudeCodeAgent:
         agent = ClaudeCodeAgent()
         agent.run("prompt", tmp_path)
 
-        live_log = tmp_path / ".claude" / "claude-live.log"
+        live_log = tmp_path / ".forgewright" / "agent-live.log"
         assert live_log.exists()
         assert "output" in live_log.read_text()
 
@@ -168,7 +168,7 @@ class TestClaudeCodeAgent:
         proc.returncode = 0
         mock_popen.return_value = proc
 
-        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".forgewright").mkdir()
 
         agent = ClaudeCodeAgent()
         agent.run("prompt", tmp_path)
@@ -195,7 +195,7 @@ class TestClaudeCodeAgent:
         proc.wait = MagicMock(return_value=-9)
         mock_popen.return_value = proc
 
-        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".forgewright").mkdir()
 
         agent = ClaudeCodeAgent(timeout_sec=0)
 
@@ -218,7 +218,7 @@ class TestClaudeCodeAgent:
     def test_popen_exception_reraises(self, mock_popen, tmp_path):
         mock_popen.side_effect = FileNotFoundError("claude not found")
 
-        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".forgewright").mkdir()
 
         agent = ClaudeCodeAgent()
         with pytest.raises(FileNotFoundError, match="claude not found"):
@@ -244,7 +244,7 @@ class TestOpenCodeAgent:
         proc.returncode = 0
         mock_popen.return_value = proc
 
-        summary_dir = tmp_path / ".claude"
+        summary_dir = tmp_path / ".forgewright"
         summary_dir.mkdir()
         (summary_dir / "last-run-summary.md").write_text("oc summary")
 
@@ -269,7 +269,7 @@ class TestOpenCodeAgent:
         proc.returncode = 0
         mock_popen.return_value = proc
 
-        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".forgewright").mkdir()
 
         agent = OpenCodeAgent(model="gpt-4")
         agent.run("prompt", tmp_path)
@@ -299,7 +299,7 @@ class TestOpenCodeAgent:
         proc.wait.return_value = 0
         proc.returncode = 0
         mock_popen.return_value = proc
-        (tmp_path / ".claude").mkdir()  # no last-run-summary.md inside
+        (tmp_path / ".forgewright").mkdir()  # no last-run-summary.md inside
 
         result = OpenCodeAgent().run("what day is it?", tmp_path)
         assert result.ok is True

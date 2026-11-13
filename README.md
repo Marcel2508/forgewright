@@ -61,7 +61,7 @@ class Agent:
 | Local CLI dispatch              | `claude -p …` | `opencode --non-interactive --prompt …` |
 | Works in a dedicated worktree   | ✅ | ✅ |
 | Honours `claude_timeout_sec`    | ✅ | ✅ |
-| Writes `.claude/last-run-summary.md` | ✅ | ✅ |
+| Writes `.forgewright/last-run-summary.md` | ✅ | ✅ |
 | Model override via config       | `claude_model` | `opencode_model` |
 | Auth                            | `claude login` (Max OAuth) or `ANTHROPIC_API_KEY` | whatever provider key OpenCode needs |
 

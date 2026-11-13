@@ -70,7 +70,8 @@ def parse_sections(summary: str) -> tuple[list[dict], dict[str, str], str]:
 
 
 def read_summary(wt: Path) -> str:
-    p = wt / ".claude" / "last-run-summary.md"
+    from forgewright.workspace import summary_path
+    p = summary_path(wt)
     if p.exists():
         # errors="replace": a non-UTF-8 summary must not crash the handler
         # (which would abort the run and re-process the item every cycle).

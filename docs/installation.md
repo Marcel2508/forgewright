@@ -306,7 +306,7 @@ sudo systemctl start forgewright.service
 journalctl -u forgewright.service -f
 
 # Follow the live agent output for an in-flight run:
-tail -f /var/lib/forgewright/work/worktrees/<project>/<branch>/.claude/claude-live.log
+tail -f /var/lib/forgewright/work/worktrees/<project>/<branch>/.forgewright/agent-live.log
 ```
 
 Docker:
@@ -322,7 +322,7 @@ docker compose --profile claude logs -f
 
 # Follow the live agent output for an in-flight run:
 docker compose --profile claude exec poller-claude \
-  tail -f /var/lib/forgewright/work/worktrees/<project>/<branch>/.claude/claude-live.log
+  tail -f /var/lib/forgewright/work/worktrees/<project>/<branch>/.forgewright/agent-live.log
 ```
 
 ## Uninstall

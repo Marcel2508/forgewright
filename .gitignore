@@ -10,6 +10,7 @@ dist/
 build/
 .env
 .claude/last-run-summary.md
+.forgewright/
 
 # Runtime writes to the seeded claude-state dir (when running compose from a
 # source checkout). The initial seed (.gitkeep and a blank .claude.json) is

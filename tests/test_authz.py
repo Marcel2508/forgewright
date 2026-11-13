@@ -162,7 +162,7 @@ class TestProcessProjectAuthorization:
              patch(self._PATCHES[4]):
             mc.return_value = tmp_path / "mirror"
             wt = tmp_path / "wt"
-            (wt / ".claude").mkdir(parents=True, exist_ok=True)
+            (wt / ".forgewright").mkdir(parents=True, exist_ok=True)
             mw.return_value = wt
             mp.return_value = ""
             process_project(cfg, platform, agent, state, make_project())
@@ -219,7 +219,7 @@ class TestProcessProjectAuthorization:
              patch(self._PATCHES[4]):
             mc.return_value = tmp_path / "mirror"
             wt = tmp_path / "wt"
-            (wt / ".claude").mkdir(parents=True, exist_ok=True)
+            (wt / ".forgewright").mkdir(parents=True, exist_ok=True)
             mw.return_value = wt
             mp.return_value = ""
             process_project(tmp_config, platform, agent, state, make_project())

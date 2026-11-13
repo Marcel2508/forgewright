@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from forgewright.helpers import run, slugify
+from forgewright.workspace import ensure_work_dir, exclude_work_dir
 
 if TYPE_CHECKING:
     from forgewright.config import Config
@@ -90,7 +91,8 @@ def make_worktree(cfg: Config, mirror: Path, project_id: int | str,
     run(["git", "config", "user.name", cfg.git_user_name], cwd=wt_path)
     run(["git", "config", "user.email", cfg.git_user_email], cwd=wt_path)
 
-    (wt_path / ".claude").mkdir(exist_ok=True)
+    exclude_work_dir(mirror)
+    ensure_work_dir(wt_path)
 
     return wt_path
 

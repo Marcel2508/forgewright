@@ -40,6 +40,7 @@ forgewright/                 # Python package
   parsing.py                 # parse_summary_replies, parse_review_comments, read_summary
   posting.py                 # post_mr_responses, post_review_comments
   decision.py                # is_review_mode, fingerprint_*, should_process_*, select_projects
+  workspace.py               # .forgewright/ scratch dir paths + git exclude
   handlers.py                # handle_issue, handle_mr, handle_mr_review, process_project
   webhook.py                 # Flask webhook server for near-real-time GitLab/GitHub events
   main.py                    # setup_logging, main(), argparse, --serve mode
@@ -108,9 +109,13 @@ main(--serve) → create_app(cfg) → Flask server
 - Fingerprints include: `description_hash`, `last_note_id`/`last_note_at` (human notes only), `labels`, `pipeline_id`/`pipeline_sha`/`pipeline_status`, `head_sha`, `bot_requested`, `desc_mention`
 - Handlers save the fingerprint as soon as the agent has run (in a `finally`), so a crash while pushing/posting never re-runs the agent
 
+### Agent scratch dir
+
+Everything exchanged with the agent lives in `<worktree>/.forgewright/` (`workspace.py`: `last-run-summary.md`, `agent-live.log`) — never `.claude/`, which is Claude Code's real, often committed config dir. `make_worktree` adds `/.forgewright/` to the mirror's `info/exclude`, so `git add -A` in any worktree can't commit it.
+
 ### Summary parsing
 
-The agent writes to `.claude/last-run-summary.md`. The bot parses this structured output:
+The agent writes to `.forgewright/last-run-summary.md`. The bot parses this structured output:
 - `## Reply to discussion <id>` blocks → threaded replies on MR discussions
 - `## Inline: <file>:<line>` blocks → inline code review comments
 - `## General` block → top-level MR comment
@@ -173,7 +178,7 @@ Native polling uses a 5-minute systemd timer (one-shot). Docker polling uses sup
 - Git mirrors: `/var/lib/forgewright/work/mirrors/`
 - Worktrees: `/var/lib/forgewright/work/worktrees/`
 - Log: `/var/log/forgewright/bot.log`
-- Live agent output: `<worktree>/.claude/claude-live.log`
+- Live agent output: `<worktree>/.forgewright/agent-live.log`
 
 ## Common patterns
 

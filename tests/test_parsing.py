@@ -145,7 +145,7 @@ class TestParseReviewComments:
 
 class TestReadSummary:
     def test_file_exists(self, tmp_path):
-        claude_dir = tmp_path / ".claude"
+        claude_dir = tmp_path / ".forgewright"
         claude_dir.mkdir()
         (claude_dir / "last-run-summary.md").write_text("  Hello World  ")
         assert read_summary(tmp_path) == "Hello World"
@@ -154,7 +154,7 @@ class TestReadSummary:
         assert read_summary(tmp_path) == ""
 
     def test_empty_file(self, tmp_path):
-        claude_dir = tmp_path / ".claude"
+        claude_dir = tmp_path / ".forgewright"
         claude_dir.mkdir()
         (claude_dir / "last-run-summary.md").write_text("")
         assert read_summary(tmp_path) == ""
