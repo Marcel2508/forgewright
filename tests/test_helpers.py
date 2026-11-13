@@ -1,7 +1,5 @@
 """Tests for forgewright.helpers."""
 
-import pytest
-
 from forgewright.helpers import has_mention, shortdt, slugify
 
 

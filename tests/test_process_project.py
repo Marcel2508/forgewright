@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from forgewright.agent.base import AgentResult
 from forgewright.handlers import process_project
 from forgewright.state import State
 from forgewright.types import DiffRefs, Discussion, MRDetail

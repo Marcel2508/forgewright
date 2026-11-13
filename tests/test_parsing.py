@@ -1,7 +1,5 @@
 """Tests for forgewright.parsing."""
 
-import pytest
-
 from forgewright.parsing import (
     parse_review_comments,
     parse_summary_replies,

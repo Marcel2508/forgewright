@@ -1,7 +1,5 @@
 """Tests for forgewright.formatting."""
 
-import pytest
-
 from forgewright.formatting import (
     format_diff_for_review,
     format_discussions,

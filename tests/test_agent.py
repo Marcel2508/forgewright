@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from forgewright.agent import create_agent
-from forgewright.agent.base import Agent, AgentResult
+from forgewright.agent.base import AgentResult
 from forgewright.agent.claude_code import ClaudeCodeAgent
 from forgewright.agent.opencode import OpenCodeAgent
 
@@ -200,7 +197,6 @@ class TestClaudeCodeAgent:
         agent = ClaudeCodeAgent(timeout_sec=0)
 
         import threading
-        original_timer = threading.Timer
 
         class InstantTimer(threading.Timer):
             def __init__(self, interval, function, *args, **kwargs):

@@ -1,7 +1,5 @@
 """Tests for forgewright.decision."""
 
-import pytest
-
 from forgewright.decision import (
     extract_user_instructions,
     fingerprint_issue,
@@ -12,7 +10,7 @@ from forgewright.decision import (
     should_process_mr,
 )
 from forgewright.types import Pipeline, Project, User
-from tests.conftest import make_issue, make_mr, make_note, make_project
+from tests.conftest import make_issue, make_mr, make_note
 
 
 class TestIsReviewMode:

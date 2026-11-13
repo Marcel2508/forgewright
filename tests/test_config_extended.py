@@ -70,7 +70,7 @@ class TestGitAuthEnv:
             lock_dir=tmp_path / "locks",
             log_file=tmp_path / "bot.log",
         )
-        env = cfg.git_auth_env()
+        cfg.git_auth_env()
         assert (tmp_path / "nonexistent" / "work").exists()
 
 

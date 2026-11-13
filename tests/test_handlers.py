@@ -1,15 +1,11 @@
 """Tests for forgewright.handlers -- integration-style with mocked deps."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
-
-from forgewright.agent.base import AgentResult
 from forgewright.handlers import _fetch_failed_job_logs, handle_issue, handle_mr, handle_mr_review
 from forgewright.types import DiffRefs, Job, MergeRequest, MRDetail, Pipeline, User
 from tests.conftest import (
-    MockAgent, MockPlatform, make_issue, make_mr, make_note, make_project,
+    MockAgent, make_issue, make_mr, make_note, make_project,
 )
 
 

@@ -14,7 +14,7 @@ from forgewright.parsing import parse_sections
 from forgewright.platform.github import GitHubPlatform
 from forgewright.posting import post_review_comments
 from forgewright.state import State
-from forgewright.types import DiffRefs, Discussion, MRDetail, Note, User
+from forgewright.types import DiffRefs, Discussion, MRDetail, User
 from tests.conftest import (
     MockAgent, MockPlatform, make_mr, make_note, make_project,
 )

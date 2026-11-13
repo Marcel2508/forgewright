@@ -1,7 +1,5 @@
 """Tests for forgewright.posting."""
 
-import pytest
-
 from forgewright.posting import post_mr_responses, post_review_comments
 from forgewright.types import DiffChange, DiffRefs, MRDetail
 from tests.conftest import MockPlatform

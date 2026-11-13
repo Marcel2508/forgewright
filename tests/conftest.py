@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -12,7 +10,6 @@ from forgewright.agent.base import Agent, AgentResult
 from forgewright.config import Config
 from forgewright.platform.base import Platform, ProjectID
 from forgewright.types import (
-    DiffChange,
     DiffRefs,
     Discussion,
     Issue,

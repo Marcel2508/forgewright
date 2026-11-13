@@ -10,7 +10,7 @@ from forgewright import authz
 from forgewright.decision import should_process_issue, should_process_mr
 from forgewright.handlers import process_project
 from forgewright.state import State
-from forgewright.types import Discussion, Note, User
+from forgewright.types import Discussion, User
 from tests.conftest import (
     MockAgent, MockPlatform, make_issue, make_mr, make_note, make_project,
 )

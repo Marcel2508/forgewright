@@ -72,7 +72,7 @@ class TestGitLabPlatformReq:
         mock_resp.status_code = 200
         with patch.object(plat._session, "request",
                           side_effect=[requests.Timeout("slow"),
-                                       mock_resp]) as mock_req, \
+                                       mock_resp]), \
              patch("forgewright.platform.gitlab.time.sleep"):
             resp = plat._req("GET", "/test")
             assert resp == mock_resp

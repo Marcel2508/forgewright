@@ -7,7 +7,7 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from flask import Flask, Request, request, jsonify
+from flask import Flask, request, jsonify
 
 from forgewright.agent import create_agent
 from forgewright.decision import select_projects

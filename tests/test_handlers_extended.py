@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from forgewright.agent.base import AgentResult
 from forgewright.handlers import (
     _fetch_failed_job_logs,
     _wait_for_mr_update,

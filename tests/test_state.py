@@ -1,9 +1,6 @@
 """Tests for forgewright.state."""
 
 import json
-from pathlib import Path
-
-import pytest
 
 from forgewright.state import State
 
