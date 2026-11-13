@@ -116,10 +116,80 @@ def format_diff_for_review(changes: list[DiffChange],
 
         if total + len(block) > max_chars:
             blocks.append(
-                f"\n_(diff truncated \u2014 {len(changes) - len(blocks)} "
-                f"file(s) omitted due to size)_")
+                f"\n_(excerpt ends here \u2014 {len(changes) - len(blocks)} "
+                f"more file(s) are only in the full diff file)_")
             break
         blocks.append(block)
         total += len(block)
 
     return "\n\n".join(blocks)
+
+
+def _diff_stats(diff: str) -> tuple[int, int]:
+    added = removed = 0
+    for line in (diff or "").splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            added += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            removed += 1
+    return added, removed
+
+
+def unified_diff_file(changes: list[DiffChange]) -> str:
+    """The complete MR diff as one git-style patch (never truncated).
+
+    Built from the platform's per-file patches, so line numbers match the
+    positions inline review comments must use.
+    """
+    parts: list[str] = []
+    for c in changes:
+        old = c.old_path or c.new_path
+        new = c.new_path or c.old_path
+        parts.append(f"diff --git a/{old} b/{new}")
+        if c.new_file:
+            parts.append("new file")
+        elif c.deleted_file:
+            parts.append("deleted file")
+        elif c.renamed_file:
+            parts.append(f"rename from {old}\nrename to {new}")
+        parts.append(f"--- {'/dev/null' if c.new_file else 'a/' + old}")
+        parts.append(f"+++ {'/dev/null' if c.deleted_file else 'b/' + new}")
+        body = (c.diff or "").rstrip("\n")
+        parts.append(body if body else "(binary or empty change)")
+    return "\n".join(parts) + "\n" if parts else ""
+
+
+def format_review_diff(changes: list[DiffChange], diff_path: str,
+                       base_sha: str | None = None,
+                       head_sha: str | None = None,
+                       inline_max_chars: int = 40000) -> str:
+    """Diff section of the review prompt.
+
+    A complete file overview, pointers to the full diff (file + git), and the
+    diff itself inline up to *inline_max_chars* — so normal MRs need no tool
+    calls, and big ones are never silently cut off.
+    """
+    if not changes:
+        return "_(no changes)_"
+    lines = [f"## Changed files ({len(changes)})"]
+    for c in changes:
+        added, removed = _diff_stats(c.diff)
+        kind = ("new" if c.new_file else "deleted" if c.deleted_file
+                else f"renamed from `{c.old_path}`" if c.renamed_file else "")
+        tag = f" — {kind}" if kind else ""
+        lines.append(f"- `{c.new_path or c.old_path}` (+{added} −{removed})"
+                     f"{tag}")
+    lines.append("")
+    lines.append(f"The **complete** diff of all {len(changes)} file(s) is in "
+                 f"`{diff_path}` (never truncated — read it, or parts of it, "
+                 f"whenever the excerpt below is cut off).")
+    if base_sha and head_sha:
+        lines.append(
+            f"You can also use git directly in this checkout: "
+            f"`git diff {base_sha}...{head_sha}` (add `-- <path>` for one "
+            f"file), `git log --oneline {base_sha}..{head_sha}`. If git "
+            f"cannot find a commit, fall back to `{diff_path}`.")
+    lines.append("")
+    lines.append("## Diff")
+    lines.append(format_diff_for_review(changes, max_chars=inline_max_chars))
+    return "\n".join(lines)

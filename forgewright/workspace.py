@@ -6,6 +6,8 @@ which is Claude Code's real per-repo config dir and is often committed):
 
     .forgewright/last-run-summary.md   agent → forgewright: the result
     .forgewright/agent-live.log        live agent output (tail -f)
+    .forgewright/mr.diff               full MR diff (review mode)
+    .forgewright/ci/<job>.log          full logs of failed CI jobs
 
 The directory is listed in the mirror's ``info/exclude``, which applies to
 every worktree of that mirror, so an agent running ``git add -A`` can never
@@ -15,11 +17,14 @@ commit (and push) these files.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 WORK_DIR = ".forgewright"
 SUMMARY_FILE = "last-run-summary.md"
 LIVE_LOG = "agent-live.log"
+MR_DIFF = "mr.diff"
+CI_DIR = "ci"
 
 # The path agents are told to write to (relative to the worktree root).
 SUMMARY_REL = f"{WORK_DIR}/{SUMMARY_FILE}"
@@ -63,3 +68,8 @@ def exclude_work_dir(mirror: Path) -> None:
     except OSError as e:  # never block a run on this
         logging.warning("could not update %s: %s", exclude, e)
 
+
+def safe_name(text: str, max_len: int = 80) -> str:
+    """File-system-safe name for job logs / context dirs."""
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", text).strip("-.")
+    return name[:max_len] or "item"

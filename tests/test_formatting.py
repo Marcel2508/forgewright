@@ -169,5 +169,6 @@ class TestFormatDiffForReview:
             for i in range(100)
         ]
         result = format_diff_for_review(changes, max_chars=5000)
-        assert "truncated" in result
-        assert "omitted" in result
+        # the inline excerpt ends, and points at the full diff file
+        assert "excerpt ends here" in result
+        assert "only in the full diff file" in result

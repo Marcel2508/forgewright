@@ -200,10 +200,14 @@ Claude Code's real per-repo config dir and often committed:
 |---|---|---|
 | `.forgewright/last-run-summary.md` | agent → bot | the structured result (see below) |
 | `.forgewright/agent-live.log` | bot | live agent output (`tail -f`) |
+| `.forgewright/mr.diff` | bot → agent | complete MR diff (review mode), never truncated |
+| `.forgewright/ci/<job>.log` | bot → agent | complete logs of failed CI jobs |
 
 `/.forgewright/` is added to the mirror's `info/exclude`, which covers every
 worktree of that mirror — an agent running `git add -A` can't commit or push
-any of it.
+any of it. The review prompt keeps a file overview plus the diff inline up to
+40 000 chars and points at `mr.diff` and `git diff <base>...<head>` for the
+rest; CI failures get the log tail inline and the full log as a file.
 
 ## Summary parsing
 

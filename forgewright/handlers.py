@@ -11,6 +11,9 @@ from typing import TYPE_CHECKING
 
 MAX_LOG_CHARS_PER_JOB = 6000
 MAX_LOG_CHARS_TOTAL = 16000
+# Full job logs go to .forgewright/ci/ — capped so a runaway log can't fill
+# the disk.
+MAX_LOG_FILE_BYTES = 10 * 1024 * 1024
 
 from forgewright.authz import (
     filter_discussions,
@@ -27,10 +30,11 @@ from forgewright.decision import (
     should_process_mr,
 )
 from forgewright.formatting import (
-    format_diff_for_review,
     format_discussions,
     format_notes,
+    format_review_diff,
     notes_from_discussions,
+    unified_diff_file,
 )
 from forgewright.git import (
     cleanup_worktree,
@@ -41,6 +45,13 @@ from forgewright.git import (
 from forgewright.helpers import file_lock, parse_ts, run, slugify
 from forgewright.posting import post_mr_responses, post_review_comments
 from forgewright.prompts import ISSUE_PROMPT, MR_REVIEW_PROMPT, MR_UPDATE_PROMPT
+from forgewright.workspace import (
+    CI_DIR,
+    MR_DIFF,
+    WORK_DIR,
+    ensure_work_dir,
+    safe_name,
+)
 from forgewright.types import (
     Discussion,
     Issue,
@@ -52,6 +63,8 @@ from forgewright.types import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from forgewright.agent.base import Agent
     from forgewright.config import Config
     from forgewright.platform.base import Platform
@@ -59,8 +72,13 @@ if TYPE_CHECKING:
 
 
 def _fetch_failed_job_logs(platform: "Platform", pid: int | str,
-                           pipeline: Pipeline) -> str:
-    """Fetch logs for failed jobs in a pipeline, returning a formatted block."""
+                           pipeline: Pipeline,
+                           wt: "Path | None" = None) -> str:
+    """Fetch logs for failed jobs in a pipeline, returning a formatted block.
+
+    The prompt gets the tail of each log; with *wt* the complete logs are
+    also written to ``.forgewright/ci/<job>.log`` and referenced.
+    """
     if not pipeline.id:
         return ""
     try:
@@ -86,10 +104,26 @@ def _fetch_failed_job_logs(platform: "Platform", pid: int | str,
             logging.warning("failed to fetch log for job %s: %s",
                             job.name, e)
             continue
+        full_note = ""
+        if wt is not None:
+            try:
+                ci_dir = ensure_work_dir(wt) / CI_DIR
+                ci_dir.mkdir(exist_ok=True)
+                fname = f"{safe_name(f'{job.id}-{job.name}')}.log"
+                data = log.encode("utf-8", errors="replace")
+                if len(data) > MAX_LOG_FILE_BYTES:
+                    data = (b"...(log start cut)\n"
+                            + data[-MAX_LOG_FILE_BYTES:])
+                (ci_dir / fname).write_bytes(data)
+                full_note = (f"\nFull log: `{WORK_DIR}/{CI_DIR}/{fname}` "
+                             f"({len(log)} chars)")
+            except OSError as e:
+                logging.warning("could not save log of job %s: %s",
+                                job.name, e)
         if len(log) > MAX_LOG_CHARS_PER_JOB:
             log = f"…(truncated)\n{log[-MAX_LOG_CHARS_PER_JOB:]}"
         parts.append(
-            f"### Job: {job.name} (stage: {job.stage})"
+            f"### Job: {job.name} (stage: {job.stage}){full_note}"
             f"\n```\n{log}\n```"
         )
         total += len(log)
@@ -313,7 +347,15 @@ def handle_mr_review(cfg: Config, platform: Platform, agent: Agent,
                                   number, e)
 
                 changes = mr_detail.changes if mr_detail else []
-                diff_block = format_diff_for_review(changes)
+                diff_rel = f"{WORK_DIR}/{MR_DIFF}"
+                (ensure_work_dir(wt) / MR_DIFF).write_text(
+                    unified_diff_file(changes), encoding="utf-8")
+                refs = (mr_detail.diff_refs if mr_detail else None) \
+                    or mr.diff_refs
+                diff_block = format_review_diff(
+                    changes, diff_rel,
+                    base_sha=refs.base_sha if refs else None,
+                    head_sha=refs.head_sha if refs else None)
                 discussion_block = format_discussions(
                     discussions, bot_username=cfg.bot_username)
                 user_instructions = extract_user_instructions(
@@ -452,7 +494,8 @@ def handle_mr(cfg: Config, platform: Platform, agent: Agent,
                         f"- sha: {p.sha}\n- url: {p.web_url}"
                     )
                     if p.status == "failed" and "pipeline" in reason:
-                        log_block = _fetch_failed_job_logs(platform, pid, p)
+                        log_block = _fetch_failed_job_logs(
+                            platform, pid, p, wt)
                         if log_block:
                             activity_lines.append(log_block)
                 activity_block = "\n".join(activity_lines)

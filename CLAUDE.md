@@ -111,7 +111,7 @@ main(--serve) → create_app(cfg) → Flask server
 
 ### Agent scratch dir
 
-Everything exchanged with the agent lives in `<worktree>/.forgewright/` (`workspace.py`: `last-run-summary.md`, `agent-live.log`) — never `.claude/`, which is Claude Code's real, often committed config dir. `make_worktree` adds `/.forgewright/` to the mirror's `info/exclude`, so `git add -A` in any worktree can't commit it.
+Everything exchanged with the agent lives in `<worktree>/.forgewright/` (`workspace.py`: `last-run-summary.md`, `agent-live.log`, `mr.diff`, `ci/<job>.log`) — never `.claude/`, which is Claude Code's real, often committed config dir. `make_worktree` adds `/.forgewright/` to the mirror's `info/exclude`, so `git add -A` in any worktree can't commit it. Review prompts carry a file overview + diff excerpt (40k chars) and point at `.forgewright/mr.diff` / `git diff <base>...<head>`; CI failures get log tails inline, full logs as files.
 
 ### Summary parsing
 
