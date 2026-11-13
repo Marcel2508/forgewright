@@ -344,7 +344,7 @@ class TestDrift:
         src = (ROOT / "forgewright" / "config.py").read_text()
         keys = set(re.findall(r'raw\.get\(\s*"([a-z_]+)"', src))
         keys |= set(re.findall(r'raw\["([a-z_]+)"\]', src))
-        keys |= set(re.findall(r'_optional_int\(raw, "([a-z_]+)"\)', src))
+        keys |= set(re.findall(r'_(?:optional_int|bool)\(raw, "([a-z_]+)"', src))
         keys -= {"gitlab_url", "gitlab_token"}   # legacy aliases
         example = yaml.safe_load((ROOT / "config.example.yaml").read_text())
         assert sorted(keys - set(example)) == []

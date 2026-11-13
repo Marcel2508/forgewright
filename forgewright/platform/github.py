@@ -180,6 +180,8 @@ def _owner_repo(project_id: ProjectID) -> str:
 class GitHubPlatform(Platform):
     """GitHub REST API v3 client."""
 
+    CODE_READ_LEVEL = 10  # "read" can see the code
+
     def __init__(self, base_url: str, token: str,
                  request_timeout: int = 30, http_retries: int = 3):
         self._base = base_url.rstrip("/")

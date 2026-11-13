@@ -30,6 +30,12 @@ class Platform(ABC):
     supported without casting.
     """
 
+    # Minimum normalized access level (see authz.ROLE_LEVELS) at which a user
+    # can read a repository's *code*. GitLab guests (10) can't for private
+    # projects, so the default is reporter (20); GitHub overrides it (read).
+    CODE_READ_LEVEL = 20
+
+
     # -- Identity & discovery --------------------------------------------------
 
     @abstractmethod

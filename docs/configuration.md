@@ -79,6 +79,28 @@ agent as "not available" and the run continues. **Visibility:** what the agent
 reads there can end up in MR/issue comments of the watched project, so only
 list repos whose content everyone who sees that project may see.
 
+| Key | Default | Description |
+|---|---|---|
+| `context_requests` | `true` | Let the agent **ask** for a repository that isn't configured; a human approves it by comment. |
+
+How a request works:
+
+1. The agent adds `## Request repo: group/name` (plus one line why) to its
+   summary. forgewright removes that section from what it posts, checks that
+   its own token can read the repo (if not, it says so once), and asks in the
+   issue/MR.
+2. Someone answers with `@forgewright allow repo group/name` — or
+   `deny repo …` / later `revoke repo …`. Commands count only from users who
+   pass `authorization_min_role` on the watched project, and **`allow` also
+   needs code-read access to the requested repo** (GitLab: reporter or
+   higher, GitHub: read or higher). The bot token often sees more than the
+   people in the MR; this keeps it from becoming a way around that.
+3. Decisions are stored per watched project in the state file and apply to
+   all later runs. An allowed repo is checked out read-only like a
+   configured one; the approval comment is a mention, so the agent picks the
+   task straight back up. Declined and unreadable repos are listed in the
+   prompt so the agent doesn't ask again.
+
 ### Agent
 
 | Key | Default | Description |

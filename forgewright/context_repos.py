@@ -92,16 +92,19 @@ def parse_context_repos(raw) -> dict[str, list[ContextRepoSpec]]:
     return out
 
 
-def specs_for(cfg: "Config", project: "Project") -> list[ContextRepoSpec]:
-    """Context repos for *project*: its own entries plus ``"*"``, deduped by
-    path (project-specific entries win), never the project itself."""
+def specs_for(cfg: "Config", project: "Project",
+              extra: "list[ContextRepoSpec] | None" = None
+              ) -> list[ContextRepoSpec]:
+    """Context repos for *project*: its own entries plus ``"*"``, then
+    *extra* (repos a human allowed on request), deduped by path (earlier
+    entries win), never the project itself."""
     table = getattr(cfg, "context_repos", None) or {}
     seen: dict[str, ContextRepoSpec] = {}
-    for key in (project.path, "*"):
-        for spec in table.get(key, []):
-            if spec.path == project.path or spec.path in seen:
-                continue
-            seen[spec.path] = spec
+    for spec in [*table.get(project.path, []), *table.get("*", []),
+                 *(extra or [])]:
+        if spec.path == project.path or spec.path in seen:
+            continue
+        seen[spec.path] = spec
     return list(seen.values())
 
 
@@ -116,7 +119,9 @@ def _resolve(mirror: Path, ref: str) -> str:
 
 
 def attach_context_repos(cfg: "Config", platform: "Platform",
-                         project: "Project", wt: Path) -> list[ContextRepo]:
+                         project: "Project", wt: Path,
+                         extra: "list[ContextRepoSpec] | None" = None
+                         ) -> list[ContextRepo]:
     """Check out the configured context repos into the worktree.
 
     Never raises: a repo that can't be fetched is reported (``error``) and
@@ -125,7 +130,7 @@ def attach_context_repos(cfg: "Config", platform: "Platform",
     from forgewright.git import clone_or_update_mirror
 
     repos: list[ContextRepo] = []
-    for spec in specs_for(cfg, project):
+    for spec in specs_for(cfg, project, extra):
         repo = ContextRepo(spec=spec)
         repos.append(repo)
         try:
@@ -161,10 +166,34 @@ def detach_context_repos(repos: list[ContextRepo]) -> None:
                 shutil.rmtree(repo._dir, ignore_errors=True)
 
 
-def format_context_block(repos: list[ContextRepo]) -> str:
-    """Prompt section listing the context repos ('' when there are none)."""
-    if not repos:
-        return ""
+def format_context_block(repos: list[ContextRepo],
+                         denied: dict | None = None,
+                         requests_enabled: bool = False) -> str:
+    """Prompt section about other repositories ('' when there is nothing to
+    say): the checked-out context repos, repos the agent must not ask for
+    again, and — if enabled — how to request one."""
+    lines: list[str] = []
+    if repos:
+        lines += _repo_lines(repos)
+    if denied:
+        lines.append("Not available (do not request again): " + ", ".join(
+            f"`{p}` ({v.get('reason', 'declined')})"
+            for p, v in sorted(denied.items())))
+    if requests_enabled:
+        if not lines:
+            lines.append("# Other repositories")
+        lines.append(
+            "If you genuinely need to read another repository of this code "
+            "host to do the task well (shared library, API definition, ...), "
+            "ask for it by adding this section to your summary file:\n\n"
+            "```\n## Request repo: <group/path>\n<one line: why you need "
+            "it>\n```\n\nA human decides; if allowed you are re-run with "
+            "it checked out here. Only request what you really need, and "
+            "still deliver what you can without it.")
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def _repo_lines(repos: list[ContextRepo]) -> list[str]:
     lines = [
         "# Additional repositories (read-only context)",
         "These repositories are checked out inside this worktree for "
@@ -179,4 +208,4 @@ def format_context_block(repos: list[ContextRepo]) -> str:
         else:
             lines.append(f"- `{r.spec.path}` — not available this run "
                          f"({r.error[:200]})")
-    return "\n".join(lines) + "\n"
+    return lines

@@ -244,6 +244,18 @@ available" without failing the run. Content from these repos can end up in
 comments on the watched project, so only list repos whose content its
 audience may see.
 
+With `context_requests` (default on, `forgewright/context_requests.py`) the
+agent can also ask for a repository by writing `## Request repo: <path>` in
+its summary. The handler strips that section, verifies the bot token can read
+the repo, and asks in the issue/MR. `process_project` applies
+`@<bot> allow|deny|revoke repo <path>` comments (each note once, keyed by
+note type + id) before deciding whether to run: `allow` requires the
+commenter to have `Platform.CODE_READ_LEVEL` on the *requested* repo (GitLab
+reporter, GitHub read) and fails closed on lookup errors; the bot's own notes
+are never commands. Grants, denials, unreadable repos and pending requests
+live in `state.json` under `context_access` per watched project; grants are
+passed to `attach_context_repos` as extra specs.
+
 ## Safety constraints
 
 - Issue work is pushed only to `branch_prefix` branches (default

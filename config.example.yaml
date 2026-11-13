@@ -71,6 +71,14 @@ projects_exclude: []
 #       - group/engineering-docs
 context_repos: {}
 
+# Let the agent ASK for a repository it needs that isn't listed above. It
+# writes "## Request repo: group/name" in its summary; the bot asks in the
+# issue/MR, and a human answers "@forgewright allow repo group/name" (or
+# "deny repo" / "revoke repo"). Only someone who can read that repo's code
+# may allow it (GitLab: reporter+, GitHub: read+) — the bot token often sees
+# more than the people in the MR. Decisions are stored per watched project.
+context_requests: true
+
 # Authorization: minimum role a user must have on the repo to interact with the
 # bot. Only mentions from users at or above this role trigger the bot, and
 # comments from users below it are stripped before any text reaches the AI agent

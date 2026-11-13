@@ -42,6 +42,7 @@ forgewright/                 # Python package
   decision.py                # is_review_mode, fingerprint_*, should_process_*, select_projects
   workspace.py               # .forgewright/ scratch dir paths + git exclude
   context_repos.py           # extra read-only repos per project (context_repos)
+  context_requests.py        # agent asks for a repo, human allows/denies by comment
   handlers.py                # handle_issue, handle_mr, handle_mr_review, process_project
   webhook.py                 # Flask webhook server for near-real-time GitLab/GitHub events
   main.py                    # setup_logging, main(), argparse, --serve mode
@@ -116,6 +117,8 @@ main(--serve) → create_app(cfg) → Flask server
 Everything exchanged with the agent lives in `<worktree>/.forgewright/` (`workspace.py`: `last-run-summary.md`, `agent-live.log`, `mr.diff`, `ci/<job>.log`, `context/<name>/`) — never `.claude/`, which is Claude Code's real, often committed config dir. `make_worktree` adds `/.forgewright/` to the mirror's `info/exclude`, so `git add -A` in any worktree can't commit it. Review prompts carry a file overview + diff excerpt (40k chars) and point at `.forgewright/mr.diff` / `git diff <base>...<head>`; CI failures get log tails inline, full logs as files.
 
 `context_repos` (`context_repos.py`, config: `{project_path or "*": [path | {path, ref}]}`) checks extra repos out read-only under `.forgewright/context/<name>/` via their own mirrors and the bot's token; `attach_context_repos` never raises (unavailable repos are listed as such), `detach_context_repos` runs before `cleanup_worktree`. Prompts get them through the `{context_block}` placeholder.
+
+`context_requests` (default on, `context_requests.py`): the agent may write `## Request repo: <path>` in its summary; handlers strip it (`_split_repo_requests`) and `request_access` asks in the issue/MR (once; unreadable-by-token repos are reported once and recorded). `process_project` runs `apply_access_commands` on the authz-filtered notes before `should_process_*`: `@<bot> allow|deny|revoke repo <path>`, each note once (`seen_notes`, key `type:id`); `allow` needs `Platform.CODE_READ_LEVEL` on the requested repo (GitLab 20/reporter, GitHub 10/read) and fails closed; the bot's own notes are never commands (its question contains the command text!). State: `context_access.{granted,denied,unavailable,pending}` per project; grants feed `attach_context_repos(extra=...)`.
 
 ### Summary parsing
 

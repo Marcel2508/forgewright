@@ -139,7 +139,9 @@ the same git-worktree pipeline:
   instead. The name `forgewright` is just the default.
 - **Context from other repos** — `context_repos` checks shared libraries,
   API specs or docs out read-only next to the code, so the agent can read
-  them without ever getting the forge token.
+  them without ever getting the forge token. The agent can also *ask* for a
+  repo it needs; someone with read access to it answers
+  `@forgewright allow repo group/name`, and the decision is remembered.
 - **Big MRs stay whole** — the full diff and complete CI logs are handed to
   the agent as files in its scratch dir `.forgewright/` (git-excluded, never
   committed), with an overview and excerpt in the prompt.

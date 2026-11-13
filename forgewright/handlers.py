@@ -25,6 +25,13 @@ from forgewright.context_repos import (
     detach_context_repos,
     format_context_block,
 )
+from forgewright.context_requests import (
+    apply_access_commands,
+    denied_repos,
+    extract_repo_requests,
+    granted_specs,
+    request_access,
+)
 from forgewright.decision import (
     extract_user_instructions,
     fingerprint_issue,
@@ -165,6 +172,23 @@ CONTINUE_HINT = ("\n\n---\n_Mention @{bot} in a new comment to continue "
                  "here; feedback on code changes belongs in the MR._")
 
 
+def _context_block(cfg: Config, state: State, pid: int | str,
+                   context: list) -> str:
+    return format_context_block(
+        context, denied=denied_repos(state, pid),
+        requests_enabled=getattr(cfg, "context_requests", True))
+
+
+def _split_repo_requests(cfg: Config, summary: str) -> tuple[list, str]:
+    """Take ``## Request repo:`` sections out of what gets posted."""
+    if not getattr(cfg, "context_requests", True):
+        return [], summary
+    requests, rest = extract_repo_requests(summary)
+    if requests and not rest.strip():
+        rest = "_(see the repository request below)_"
+    return requests, rest
+
+
 def _issue_branch(cfg: Config, state: State, pid: int | str,
                   issue: Issue) -> str:
     """Branch for an issue — reused from earlier runs.
@@ -212,9 +236,11 @@ def handle_issue(cfg: Config, platform: Platform, agent: Agent,
             delete_branch_after = False
             context: list = []
             try:
-                context = attach_context_repos(cfg, platform, project, wt)
+                context = attach_context_repos(
+                    cfg, platform, project, wt,
+                    extra=granted_specs(state, pid))
                 prompt = ISSUE_PROMPT.format(
-                    context_block=format_context_block(context),
+                    context_block=_context_block(cfg, state, pid, context),
                     repo_path=project.path,
                     base_branch=base_branch,
                     iid=number,
@@ -230,6 +256,7 @@ def handle_issue(cfg: Config, platform: Platform, agent: Agent,
                 result = agent.run(prompt, wt)
                 agent_ran = True
                 summary = result.summary or "_(no summary)_"
+                repo_requests, summary = _split_repo_requests(cfg, summary)
 
                 pushed = ""
                 try:
@@ -289,6 +316,8 @@ def handle_issue(cfg: Config, platform: Platform, agent: Agent,
                         f"<details><summary>log tail</summary>\n\n"
                         f"```\n{result.output[-3000:]}\n```\n</details>"
                         f"{hint}")
+                request_access(cfg, platform, state, project,
+                               repo_requests, lambda body: platform.comment_issue(pid, number, body))
             finally:
                 detach_context_repos(context)
                 cleanup_worktree(mirror, wt)
@@ -349,7 +378,9 @@ def handle_mr_review(cfg: Config, platform: Platform, agent: Agent,
                                detach_ref=detach_ref)
             context: list = []
             try:
-                context = attach_context_repos(cfg, platform, project, wt)
+                context = attach_context_repos(
+                    cfg, platform, project, wt,
+                    extra=granted_specs(state, pid))
                 mr_detail: MRDetail | None = None
                 try:
                     mr_detail = platform.mr_changes(pid, number)
@@ -375,7 +406,7 @@ def handle_mr_review(cfg: Config, platform: Platform, agent: Agent,
                     user_instructions = f"{FORK_NOTE}\n\n{user_instructions}"
 
                 prompt = MR_REVIEW_PROMPT.format(
-                    context_block=format_context_block(context),
+                    context_block=_context_block(cfg, state, pid, context),
                     repo_path=project.path,
                     base_branch=base_branch,
                     mr_iid=number,
@@ -394,6 +425,7 @@ def handle_mr_review(cfg: Config, platform: Platform, agent: Agent,
                 result = agent.run(prompt, wt)
                 agent_ran = True
                 summary = result.summary or "_(no review generated)_"
+                repo_requests, summary = _split_repo_requests(cfg, summary)
 
                 if not result.ok:
                     platform.comment_mr(
@@ -442,6 +474,8 @@ def handle_mr_review(cfg: Config, platform: Platform, agent: Agent,
                                 changes=[])
                         post_review_comments(
                             platform, pid, fresh_detail, summary)
+                request_access(cfg, platform, state, project,
+                               repo_requests, lambda body: platform.comment_mr(pid, number, body))
             finally:
                 detach_context_repos(context)
                 cleanup_worktree(mirror, wt)
@@ -480,7 +514,9 @@ def handle_mr(cfg: Config, platform: Platform, agent: Agent,
             wt = make_worktree(cfg, mirror, pid, branch, base_branch)
             context: list = []
             try:
-                context = attach_context_repos(cfg, platform, project, wt)
+                context = attach_context_repos(
+                    cfg, platform, project, wt,
+                    extra=granted_specs(state, pid))
                 prev_fp = (prev or {}).get("fingerprint") or {}
                 prev_note_at = prev_fp.get("last_note_at")
                 cutoff = parse_ts(prev_note_at) if prev_note_at else None
@@ -523,7 +559,7 @@ def handle_mr(cfg: Config, platform: Platform, agent: Agent,
                     issue_block = f"Issue #{m.group(1)} ({issue_url})"
 
                 prompt = MR_UPDATE_PROMPT.format(
-                    context_block=format_context_block(context),
+                    context_block=_context_block(cfg, state, pid, context),
                     repo_path=project.path,
                     base_branch=base_branch,
                     mr_iid=number,
@@ -538,6 +574,7 @@ def handle_mr(cfg: Config, platform: Platform, agent: Agent,
                 result = agent.run(prompt, wt)
                 agent_ran = True
                 summary = result.summary or "_(no summary written)_"
+                repo_requests, summary = _split_repo_requests(cfg, summary)
 
                 try:
                     pushed = push_branch(cfg, platform, wt, branch,
@@ -566,6 +603,8 @@ def handle_mr(cfg: Config, platform: Platform, agent: Agent,
                         f"attempt {ci_attempts}/{max_attempts}. If the "
                         f"pipeline fails again I will not retry on my own "
                         f"— leave a comment here to continue.")
+                request_access(cfg, platform, state, project,
+                               repo_requests, lambda body: platform.comment_mr(pid, number, body))
             finally:
                 detach_context_repos(context)
                 cleanup_worktree(mirror, wt)
@@ -620,6 +659,10 @@ def process_project(cfg: Config, platform: Platform, agent: Agent,
             continue
         if authorized is not None:
             notes = filter_notes(notes, authorized)
+        if getattr(cfg, "context_requests", True):
+            apply_access_commands(
+                cfg, platform, state, project, notes,
+                lambda body, n=number: platform.comment_issue(pid, n, body))
         prev = proj_state["issues"].get(str(number))
         go, reason = should_process_issue(issue, notes, prev,
                                           cfg.bot_username, authorized)
@@ -644,6 +687,10 @@ def process_project(cfg: Config, platform: Platform, agent: Agent,
         if authorized is not None:
             discussions = filter_discussions(discussions, authorized)
         notes = notes_from_discussions(discussions)
+        if getattr(cfg, "context_requests", True):
+            apply_access_commands(
+                cfg, platform, state, project, notes,
+                lambda body, n=number: platform.comment_mr(pid, n, body))
         prev = proj_state["merge_requests"].get(str(number))
         go, reason = should_process_mr(
             mr, notes, pipelines, prev, cfg.bot_username, cfg.branch_prefix,

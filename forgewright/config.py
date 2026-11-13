@@ -73,6 +73,8 @@ class Config:
     # Extra read-only repos per watched project ("*" = all), see
     # forgewright/context_repos.py: {project_path: [ContextRepoSpec, ...]}
     context_repos: dict = field(default_factory=dict)
+    # Let the agent ask for other repos; a human allows them by comment.
+    context_requests: bool = True
     # Webhook server
     webhook_enabled: bool = False
     webhook_host: str = "127.0.0.1"
@@ -167,6 +169,7 @@ class Config:
             opencode_model=raw.get("opencode_model"),
             **_hermes_fields(raw),
             context_repos=_context_repos(raw),
+            context_requests=_bool(raw, "context_requests", True),
             webhook_enabled=bool(raw.get("webhook_enabled", False)),
             webhook_host=(raw.get("webhook_host")
                           or os.environ.get("WEBHOOK_HOST")
@@ -270,3 +273,10 @@ def _hermes_fields(raw: dict) -> dict:
 def _context_repos(raw: dict) -> dict:
     from forgewright.context_repos import parse_context_repos
     return parse_context_repos(raw.get("context_repos"))
+
+
+def _bool(raw: dict, key: str, default: bool) -> bool:
+    val = raw.get(key, default)
+    if not isinstance(val, bool):
+        raise SystemExit(f"{key} must be true or false — got {val!r}")
+    return val
