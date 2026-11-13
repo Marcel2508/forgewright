@@ -149,6 +149,8 @@ Tests use `pytest` with fixtures defined in `tests/conftest.py`:
 
 Handler tests mock git operations (`clone_or_update_mirror`, `make_worktree`, `push_branch`, `cleanup_worktree`, `run`) to avoid real git/subprocess calls.
 
+`tests/test_regressions.py` holds cross-cutting guards: rendered prompts (no unfilled placeholders, no `origin/` refs), argv limit + secret hygiene + process group for **every** agent, multi-poll lifecycles through `process_project`, and drift checks between code, `config.example.yaml`, Dockerfiles, compose, CI matrix and installer. When adding an agent, add it to `AGENTS` there. Hermes tests must keep `HERMES_HOME` pointed at `tmp_path` (autouse fixtures do this) so they never touch a real `~/.hermes`.
+
 ### Entry points
 
 - `python -m forgewright` — package entry point (polling mode)
@@ -194,8 +196,8 @@ Native polling uses a 5-minute systemd timer (one-shot). Docker polling uses sup
 1. Create `agent/myagent.py` with a class implementing `Agent`
 2. Add factory case in `agent/__init__.py:create_agent()`
 3. Add any new config fields to `Config` in `config.py`
-4. Add config defaults to `Config.load()` and `config.example.yaml`
-5. Add `Dockerfile.<agent>`, the `poller-/webhook-<agent>` compose services, the CI matrix entry and the `install.docker.sh` profile
+4. Add config defaults to `Config.load()` and `config.example.yaml` (a drift test checks every key is documented)
+5. Add `Dockerfile.<agent>`, the `poller-/webhook-<agent>` compose services, the CI matrix entry and the `install.docker.sh` profile, then add the agent to `AGENTS` in `tests/test_regressions.py`
 
 ### Modifying prompt templates
 
